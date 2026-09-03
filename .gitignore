@@ -1,0 +1,14 @@
+#macOS custom attributes
+.DS_Store
+
+#Windows VM ini file
+Cuis7-8-main/CuisVM.app/Contents/Windows-x86_64/Squeak.ini
+
+#VM binary and image snapshots (regenerated/vendored, no useful diffs)
+Cuis7-8-main/CuisVM.app/
+Cuis7-8-main/CuisImage/Cuis7.8.image
+Cuis7-8-main/CuisImage/Cuis7.8.sources
+Cuis7-8-main/CuisImage/32BitsImage/
+
+#Downloaded distribution archive
+Cuis7-8-main.zip
