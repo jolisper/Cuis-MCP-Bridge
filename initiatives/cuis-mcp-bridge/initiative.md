@@ -40,27 +40,31 @@ edit by hand inside the Browser.
 
 ## Scope
 
-Touches two things, developed and versioned separately:
+Touches two things, developed as two components within this same repository (not separate
+repos):
 
 - A small addition inside the Cuis image itself (a Smalltalk-side component) that exposes
   the image's structure and, later, accepts authoring commands, over some external-facing
-  channel. This lives in its own repository, separate from the Cuis distribution repo
-  (`Cuis7-8-main`) that was just placed under git.
+  channel. Lives at `mcp-bridge/image/` as a standard Cuis package (`.pck.st`, with a
+  `!provides:`/`!requires:` header like the rest of `Cuis7-8-main/Packages`), loaded via
+  File List → fileIn so it registers in Installed Packages like any other package.
 - An external process that speaks the Model Context Protocol (MCP) on one side, so Claude
   Code can use it as a set of tools, and talks to the Cuis-side component on the other side.
+  Lives at `mcp-bridge/server/` as a Node.js/TypeScript project.
 
 Effort is small-to-moderate for the read-only slice: a handful of reflection operations
 (categories, classes, protocols, methods, source, comments) and a thin external process to
 expose them as MCP tools. The write-capable follow-on is a separate, later increment that
 reuses the same channel rather than introducing a new one.
 
-## Open questions
+## Decisions
 
-- What should the external-facing channel's transport and message format be, concretely
-  (e.g. sockets vs. something else, and the exact message shape)? Noted as a candidate
-  direction from prior discussion, not yet locked in at the intent level.
-- What language/runtime the external MCP-facing process should be built in is still a
-  first-version-vs-later-iteration question — prior discussion leaned toward whatever is most
-  accessible now, with room to revisit.
-- How will the two repositories (Cuis distribution and the bridge) be kept in sync as the
-  Cuis-side component evolves alongside the external process?
+- **Transport**: a local TCP socket carrying newline-delimited JSON messages, request/response
+  style. The Cuis-side component runs the socket server.
+- **External process runtime**: Node.js / TypeScript, using the official MCP TypeScript SDK.
+- **Component layout**: both components live in this same repository, under `mcp-bridge/`
+  (`mcp-bridge/image/` for the Cuis package, `mcp-bridge/server/` for the Node bridge
+  process) — no separate repos, no submodules. The TCP/JSON channel still carries an
+  explicit protocol version in its handshake as a safety net (the two components can still
+  be updated independently even sharing one repo — e.g. an older running image against a
+  newer bridge build), and the bridge fails with a clear error on a mismatch.
