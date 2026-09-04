@@ -8,7 +8,16 @@ Cuis7-8-main/CuisVM.app/Contents/Windows-x86_64/Squeak.ini
 Cuis7-8-main/CuisVM.app/
 Cuis7-8-main/CuisImage/Cuis7.8.image
 Cuis7-8-main/CuisImage/Cuis7.8.sources
+Cuis7-8-main/CuisImage/Cuis7.8.changes
 Cuis7-8-main/CuisImage/32BitsImage/
 
 #Downloaded distribution archive
 Cuis7-8-main.zip
+
+#Auto-generated numbered backup snapshots of the user changes log
+*.user.[0-9][0-9][0-9].changes
+UserChanges/
+
+#Base Cuis image user changes log
+Cuis7.8.user.changes
+Cuis7-8-main-UserFiles/UserChanges/Cuis7.8.user.changes
