@@ -14,8 +14,8 @@ Cuis7-8-main/CuisImage/32BitsImage/
 #Downloaded distribution archive
 Cuis7-8-main.zip
 
-#Root-level generated user changes log snapshots
-/UserChanges/
+#Generated user changes log snapshots (VM writes these wherever it happens to run from)
+UserChanges/
 
 #Generated Cuis user files (change logs, new packages) — nothing here is versioned
 Cuis7-8-main-UserFiles/
