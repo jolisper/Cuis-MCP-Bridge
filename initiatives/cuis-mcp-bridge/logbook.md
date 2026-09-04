@@ -429,3 +429,37 @@ for this log and happens later, outside this implementation phase.
 - mcp-bridge/server/src/tools.ts
 - mcp-bridge/server/src/tools.test.ts
 - mcp-bridge/server/src/index.ts
+
+## Post-implementation fix: `requestLoop` hang under live/GUI usage
+
+While dogfooding the finished bridge against the real interactive image (not the headless
+test harness), `requestLoop` (`McpBridgeConnection`, `MCP-Bridge.pck.st`) was found to hang
+the connection permanently under real usage, requiring a manual `McpBridgeServer stop.` /
+`startOn:` to recover. Root-caused live, with the image's own Debugger as evidence:
+
+1. **Misdiagnosed first**: `line isEmpty ifTrue: [ ^self ]` treated any empty read from
+   `socket receiveDataTimeout: 5` as "peer closed", when an empty read also happens on a
+   plain timeout with no data yet and the socket still open. Fixed to only end the loop when
+   `socket isConnected` is actually false, letting a mere timeout just loop and retry. This
+   fix alone did not resolve the hang.
+2. **Real root cause**: `socket receiveDataTimeout: 5` itself raised an unhandled
+   `SocketPrimitiveFailed` (`primSocketReceiveDataAvailable: failed`) on a live socket. The
+   existing `on: Error do:` in `requestLoop` only wrapped the request-dispatch step, not the
+   receive call — so this error propagated unhandled out of the forked request-loop
+   `Process`, which under the real (non-headless) image opens an interactive Debugger and
+   suspends that process indefinitely. The TCP connection stayed `ESTABLISHED` with nothing
+   left to service it, so every subsequent request from the client — even one already known
+   to work — hung until the 60s `inactivityTimeoutSeconds` eventually force-destroyed the
+   stale `activeSocket`, or the server was restarted by hand. Fixed by also wrapping the
+   receive call: `line := [socket receiveDataTimeout: 5] on: Error do: [:ex | ^self].` — any
+   receive-time error now ends the loop cleanly instead of opening a debugger.
+
+Added a regression test, `testRequestLoopTerminatesCleanlyWhenSocketReceiveRaisesAnError`,
+using a new `McpBridgeFailingSocketStub` test double whose `receiveDataTimeout:` always
+raises an `Error` (simulating the real `SocketPrimitiveFailed`) — asserts the request-loop
+`Process` terminates itself rather than being left suspended. Verified headless: 24/24 SUnit
+tests pass (23 original + 1 new). Also manually verified live against the real interactive
+image: reproduced the original hang via repeated `list_methods` calls through the bridge,
+applied both fixes via File List re-fileIn, and confirmed the same call sequence — plus a
+recursive `get_method_source` call against `requestLoop` itself — now succeeds repeatedly
+with no hang.
