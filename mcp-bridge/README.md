@@ -64,8 +64,28 @@ McpBridgeServer stop.
 
 ## 4. Register the bridge with Claude Code
 
-Add an MCP server entry pointing at the built `dist/index.js`, e.g. in a `.mcp.json` at your
-project root (or via `claude mcp add`):
+The bridge is a normal stdio MCP server — register it once, pointing at the absolute path to
+the built `dist/index.js`. Two ways to do this:
+
+**Option A — `claude mcp add` (recommended):**
+
+```
+claude mcp add cuis-mcp-bridge -- node /absolute/path/to/mcp-bridge/server/dist/index.js
+```
+
+Stdio is the implicit default transport for a local command server, so no `--transport` flag
+is needed. Use the real absolute path on your machine, e.g. if this repo is checked out at
+`/Users/you/Cuis`, the path is `/Users/you/Cuis/mcp-bridge/server/dist/index.js`.
+
+By default this registers the server with `--scope local` (tied to the project directory
+you're running the command from). Add `--scope project` instead if you want the entry written
+to a team-shared `.mcp.json` (equivalent to Option B below), or `--scope user` to make it
+available across all your projects.
+
+**Option B — edit `.mcp.json` by hand:**
+
+Create or edit `.mcp.json` at the root of the project you want the bridge available in (not
+necessarily this repo's root — wherever you'll be running Claude Code from):
 
 ```json
 {
@@ -78,13 +98,34 @@ project root (or via `claude mcp add`):
 }
 ```
 
-Use the absolute path to `dist/index.js` on your machine. Restart Claude Code (or reload MCP
-servers) after adding the entry. Check Claude Code's own MCP documentation if this format has
-changed since writing.
+**After registering either way:**
+
+1. Restart Claude Code (or start a new session) so it picks up the new server — MCP servers
+   are only loaded at startup.
+2. Verify it's connected: run `claude mcp list` from a terminal, or type `/mcp` inside a
+   Claude Code session. `cuis-mcp-bridge` should show as connected. If it shows as failed,
+   double-check the path in the config is absolute and that `npm run build` actually produced
+   `dist/index.js` (step 1).
+3. The 7 tools listed below (`list_categories`, `list_classes`, etc.) should now be available
+   to Claude Code for use in conversation.
+
+Check Claude Code's own MCP documentation if this registration format has changed since
+writing.
+
+> **If `claude mcp add` opens an interactive chat session instead of registering the
+> server** (e.g. it greets you with "Welcome back" and shows part of your command as a
+> prompt), your `claude` command is likely wrapped by a shell function/alias that injects
+> its own flags before yours — e.g. `claude() { command claude --add-dir <dir> "$@"; }`. A
+> variadic flag like `--add-dir` injected ahead of `mcp add <name>` can swallow those
+> tokens as its own arguments, leaving only what's after `--` to be parsed, which then gets
+> treated as a plain prompt. Check with `type claude`; if it's a function, bypass it with
+> `command claude mcp add ...` instead.
 
 The bridge process does not eagerly connect to the Cuis image at startup — it can be
-registered and running before `McpBridgeServer startOn: 6789` is evaluated. The first tool
-call triggers the first connection attempt.
+registered and running before `McpBridgeServer startOn: 6789` is evaluated (step 3). The
+first tool call triggers the first connection attempt; if the Cuis-side server isn't running
+yet, that first call will fail with `unreachable` (see Troubleshooting below) rather than the
+whole bridge failing to start.
 
 ## 5. Available tools
 
