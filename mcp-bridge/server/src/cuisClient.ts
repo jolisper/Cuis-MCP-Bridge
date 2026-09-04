@@ -92,6 +92,34 @@ export class CuisClient {
     };
   }
 
+  /**
+   * Attaches the steady-state response listener used for every request after the
+   * handshake completes. An ordinary operation error (`not_found`, `invalid_request`, ...)
+   * is a normal protocol result, not a reason to tear down the connection — only `close`/
+   * `error` events (the server or network actually going away) do that.
+   */
+  private attachResponseHandler(socket: net.Socket): void {
+    let buffer = '';
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString('utf8');
+      let newlineIndex: number;
+      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        const response = JSON.parse(line) as
+          | { ok: true; result: unknown }
+          | { ok: false; error: { code: ErrorCode; message: string } };
+        const currentPending = this.pending;
+        this.pending = undefined;
+        if (response.ok) {
+          currentPending?.resolve(response.result);
+        } else {
+          currentPending?.reject(new CuisResponseError(response.error.code, response.error.message));
+        }
+      }
+    });
+  }
+
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       const socket = net.createConnection({ host: this.host, port: this.port }, () => {
@@ -106,7 +134,7 @@ export class CuisClient {
       );
 
       let buffer = '';
-      socket.on('data', (chunk) => {
+      const onHandshakeData = (chunk: Buffer): void => {
         buffer += chunk.toString('utf8');
         const newlineIndex = buffer.indexOf('\n');
         if (newlineIndex === -1) {
@@ -117,8 +145,10 @@ export class CuisClient {
         const response = JSON.parse(line) as HandshakeResponse;
         const currentPending = this.pending;
         this.pending = undefined;
+        socket.off('data', onHandshakeData);
         if (response.ok === true) {
           this.socket = socket;
+          this.attachResponseHandler(socket);
           currentPending?.resolve(response.result);
         } else if (response.error.code === 'protocol_mismatch') {
           socket.end();
@@ -127,7 +157,8 @@ export class CuisClient {
           socket.end();
           currentPending?.reject(new CuisResponseError(response.error.code, response.error.message));
         }
-      });
+      };
+      socket.on('data', onHandshakeData);
 
       socket.on('error', (err) => {
         this.pending?.reject(new UnreachableError(err.message));

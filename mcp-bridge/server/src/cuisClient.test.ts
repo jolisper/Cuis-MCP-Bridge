@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
-import { CuisClient, ProtocolMismatchError, UnreachableError } from './cuisClient.js';
+import { CuisClient, CuisResponseError, ProtocolMismatchError, UnreachableError } from './cuisClient.js';
 
 describe('CuisClient', () => {
   let fakeServer: net.Server | undefined;
@@ -145,6 +145,57 @@ describe('CuisClient', () => {
     const result = await client.sendRequest<string[]>('list_categories', {});
 
     // Then it resolves with the parsed result from the second response line
+    expect(result).toEqual(['MCP-Bridge']);
+  });
+
+  it('keeps the connection open after an ordinary operation error response, so a later request on the same connection still succeeds', async () => {
+    // Given a fake Cuis-side TCP server that replies successfully to the handshake,
+    // then replies to the first request with an ordinary not_found error envelope,
+    // then replies to a second request with a normal success envelope
+    const port = await new Promise<number>((resolve) => {
+      fakeServer = net.createServer((socket) => {
+        openConnections.push(socket);
+        let buffer = '';
+        let requestCount = 0;
+        socket.on('data', (chunk) => {
+          buffer += chunk.toString('utf8');
+          let newlineIndex: number;
+          while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+            buffer = buffer.slice(newlineIndex + 1);
+            requestCount += 1;
+            if (requestCount === 1) {
+              socket.write('{"ok": true, "result": {"protocol_version": 1}}\n');
+            } else if (requestCount === 2) {
+              socket.write('{"ok": false, "error": {"code": "not_found", "message": "category not found: \'\'"}}\n');
+            } else {
+              socket.write('{"ok": true, "result": ["MCP-Bridge"]}\n');
+            }
+          }
+        });
+      });
+      fakeServer.listen(0, '127.0.0.1', () => {
+        resolve((fakeServer!.address() as net.AddressInfo).port);
+      });
+    });
+
+    const client = new CuisClient({ host: '127.0.0.1', port });
+
+    // When connecting, sending a request that gets an ordinary error response,
+    // then sending a second request on what should still be the same connection
+    await client.connect();
+    let caught: unknown;
+    try {
+      await client.sendRequest('list_classes', { category: '' });
+    } catch (err) {
+      caught = err;
+    }
+    const result = await client.sendRequest<string[]>('list_categories', {});
+
+    // Then the first call rejects with the ordinary CuisResponseError, and the
+    // second call still succeeds on the same connection — the error response did
+    // not silently end the socket the way a handshake failure legitimately does
+    expect(caught).toBeInstanceOf(CuisResponseError);
+    expect(caught).toMatchObject({ code: 'not_found' });
     expect(result).toEqual(['MCP-Bridge']);
   });
 

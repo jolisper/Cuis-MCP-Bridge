@@ -14,7 +14,7 @@ Object subclass: #McpBridgeServer
 	category: 'MCP-Bridge'!
 !classDefinition: 'McpBridgeServer class' category: #'MCP-Bridge'!
 McpBridgeServer class
-	instanceVariableNames: 'connectionQueue activeSocket pollProcess inactivityTimeoutSeconds activeSocketSetAt'!
+	instanceVariableNames: 'connectionQueue activeSocket pollProcess inactivityTimeoutSeconds activeSocketLastActivityAt verbose'!
 
 !classDefinition: #McpBridgeConnection category: #'MCP-Bridge'!
 Object subclass: #McpBridgeConnection
@@ -36,7 +36,9 @@ ConnectionQueue subclass: #McpBridgeConnectionQueue
 !McpBridgeServer commentStamp: 'jlp 3/Sep/2026 20:55:58' prior: 0!
 I am a single-session, loopback-only, polling-based TCP server. I accept at most one active connection at a time, on 127.0.0.1 only; a second connection attempt while one is already active is rejected with a "session_busy" error and closed. An inactive active connection is freed after `inactivityTimeoutSeconds` of silence, so a subsequent connection attempt can take its place.
 
-My class-side `pollLoop` process periodically checks the active connection's inactivity timeout and accepts (or rejects) incoming connections queued by my `McpBridgeConnectionQueue`. Send `startOn:` to start listening on a port, and `stop` to shut down.!
+My class-side `pollLoop` process periodically checks the active connection's inactivity timeout and accepts (or rejects) incoming connections queued by my `McpBridgeConnectionQueue`. Send `startOn:` to start listening on a port, and `stop` to shut down.
+
+Send `verbose: true` (before or after `startOn:`) to have connection/request activity — accepted and rejected connections, inactivity-driven cleanup, and each request's op and params — logged via `Transcript log:`. Off by default. Millisecond-precision timestamps and the logging Process' identity only appear on each entry if `Transcript logToFile:`/`logToStdout:` is also enabled (see `Transcript` class comment); without those, entries still show live in the Transcript window, just untimestamped.!
 
 !McpBridgeConnection commentStamp: 'jlp 3/Sep/2026 23:55:00' prior: 0!
 I own the request loop for one accepted socket. I read each request line, decode it with `Json`, and dispatch it by its `op` name to a handler method: `handshake`, plus reflection operations (`list_categories`, `list_classes`, `list_protocols`, `list_methods`, `get_method_source`, `get_class_definition`, `get_class_comment`) that query the running image's class/method organization. Each handler replies with a success or error envelope. I run my request loop in my own forked `Process`.!
@@ -60,11 +62,13 @@ start
 	process name: 'McpBridgeConnection request loop'.
 	process resume.! !
 
-!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 16:00:00'!
+!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 17:00:00'!
 requestLoop
 	[
-		| line request op selector |
-		line := [socket receiveDataTimeout: 5] on: Error do: [:ex | ^self].
+		| line request op selector params |
+		line := [socket receiveDataTimeout: 5] on: Error do: [:ex |
+			McpBridgeServer logConnectionEndedFor: socket dueTo: ex.
+			^self].
 		line isEmpty
 			ifFalse: [
 				request := self parseRequest: line.
@@ -73,6 +77,8 @@ requestLoop
 					ifNotNil: [
 						[
 							op := request at: 'op' ifAbsent: [nil].
+							params := request at: 'params' ifAbsent: [nil].
+							McpBridgeServer log: 'request: ', op printString, ' params: ', (params ifNil: ['nil'] ifNotNil: [Json render: params]).
 							selector := self operationHandlers at: op ifAbsent: [nil].
 							selector
 								ifNotNil: [ self perform: selector with: request ]
@@ -83,7 +89,9 @@ requestLoop
 		waiting) or the peer closed (socket no longer connected) — only the latter should
 		end the loop. Conflating the two used to silently kill this process on a mere
 		timeout, orphaning the TCP connection with nothing left to service it."
-		socket isConnected ifFalse: [ ^self ]
+		socket isConnected ifFalse: [
+			McpBridgeServer log: 'connection ended: peer closed'.
+			^self ]
 	] repeat! !
 
 !McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
@@ -140,7 +148,7 @@ handleListProtocols: request
 		at: 'class' put: (self sortedStringArrayFrom: aClass class organization categories);
 		yourself)! !
 
-!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 12:00:00'!
+!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 18:30:00'!
 handleListMethods: request
 	| protocol side aClass target |
 	protocol := self paramNamed: 'protocol' from: request.
@@ -149,6 +157,8 @@ handleListMethods: request
 	side := self resolveSide: (self paramNamed: 'side' from: request).
 	side ifNil: [^self].
 	target := self target: aClass forSide: side.
+	(target organization categories includes: protocol asSymbol)
+		ifFalse: [ ^self sendError: 'not_found' message: 'protocol not found: ''', protocol, '''' ].
 	self sendSuccess: (self sortedStringArrayFrom: (target organization listAtCategoryNamed: protocol asSymbol))! !
 
 !McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 22:00:00'!
@@ -215,16 +225,17 @@ paramNamed: aKey from: request
 sortedStringArrayFrom: aCollection
 	^ (aCollection asSortedCollection collect: [:each | each asString]) asArray! !
 
-!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 17:30:00'!
 sendSuccess: aResult
 	| envelope |
 	envelope := Json render: (OrderedDictionary new
 		at: 'ok' put: true;
 		at: 'result' put: aResult;
 		yourself).
-	socket sendData: envelope , String lfString! !
+	socket sendData: envelope , String lfString.
+	McpBridgeServer noteActivityFor: socket! !
 
-!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 17:30:00'!
 sendError: aCode message: aMessage
 	| envelope |
 	envelope := Json render: (OrderedDictionary new
@@ -234,7 +245,8 @@ sendError: aCode message: aMessage
 			at: 'message' put: aMessage;
 			yourself);
 		yourself).
-	socket sendData: envelope , String lfString! !
+	socket sendData: envelope , String lfString.
+	McpBridgeServer noteActivityFor: socket! !
 
 !McpBridgeConnectionQueue methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
 createListeningSocketWithBacklog: aNumber
@@ -290,24 +302,42 @@ inactivityTimeoutSeconds
 inactivityTimeoutSeconds: aNumberOfSeconds
 	inactivityTimeoutSeconds := aNumberOfSeconds! !
 
-!McpBridgeServer class methodsFor: 'starting' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeServer class methodsFor: 'accessing' stamp: 'jlp 4/Sep/2026 17:00:00'!
+verbose
+	^ verbose ifNil: [ false ]! !
+
+!McpBridgeServer class methodsFor: 'accessing' stamp: 'jlp 4/Sep/2026 17:00:00'!
+verbose: aBoolean
+	verbose := aBoolean! !
+
+!McpBridgeServer class methodsFor: 'logging' stamp: 'jlp 4/Sep/2026 18:00:00'!
+log: aString
+	"Transcript log: is the preferred protocol (see Transcript class comment): thread-safe,
+	and — when Transcript logToFile:/logToStdout: is enabled — timestamps each entry with
+	millisecond precision and tags it with the logging Process, both useful here since
+	pollLoop and each connection's requestLoop are separate Processes logging concurrently."
+	self verbose ifTrue: [ Transcript log: '[MCP-Bridge] ', aString ]! !
+
+!McpBridgeServer class methodsFor: 'starting' stamp: 'jlp 4/Sep/2026 17:00:00'!
 startOn: aPort
 	connectionQueue := McpBridgeConnectionQueue portNumber: aPort queueLength: 5.
 	activeSocket := nil.
-	activeSocketSetAt := nil.
+	activeSocketLastActivityAt := nil.
 	pollProcess := [self pollLoop] newProcess.
 	pollProcess priority: Processor highIOPriority.
 	pollProcess name: 'McpBridgeServer poll'.
-	pollProcess resume.! !
+	pollProcess resume.
+	self log: 'started on port ', aPort printString! !
 
-!McpBridgeServer class methodsFor: 'starting' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeServer class methodsFor: 'starting' stamp: 'jlp 4/Sep/2026 17:00:00'!
 stop
 	pollProcess ifNotNil: [ pollProcess terminate ].
 	pollProcess := nil.
 	connectionQueue ifNotNil: [ connectionQueue destroy ].
 	connectionQueue := nil.
 	activeSocket := nil.
-	activeSocketSetAt := nil.! !
+	activeSocketLastActivityAt := nil.
+	self log: 'stopped'! !
 
 !McpBridgeServer class methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
 pollLoop
@@ -316,16 +346,34 @@ pollLoop
 		self checkInactivityTimeout.
 		self acceptOrRejectIncomingConnection] repeat! !
 
-!McpBridgeServer class methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeServer class methodsFor: 'private' stamp: 'jlp 4/Sep/2026 17:30:00'!
+noteActivityFor: aSocket
+	"Refresh the inactivity clock for aSocket, but only if it is still the current active
+	connection — a stale/replaced connection finishing up a request after losing its
+	active status must not reset the timer for whichever connection replaced it."
+	(activeSocket == aSocket) ifTrue: [ activeSocketLastActivityAt := Time millisecondClockValue ]! !
+
+!McpBridgeServer class methodsFor: 'private' stamp: 'jlp 4/Sep/2026 19:00:00'!
+logConnectionEndedFor: aSocket dueTo: anException
+	"Told by a connection's request loop that its receive failed. Only I know whether
+	aSocket had already been superseded (e.g. freed by my own inactivity cleanup, or
+	replaced by a newer connection) — if so this is an expected, unremarkable tail end of
+	that, not a fresh problem, so it is logged quietly rather than as a receive error."
+	(activeSocket == aSocket)
+		ifTrue: [ self log: 'connection ended: receive error: ', anException class name, ' - ', anException messageText ]
+		ifFalse: [ self log: 'connection closed (already superseded)' ]! !
+
+!McpBridgeServer class methodsFor: 'private' stamp: 'jlp 4/Sep/2026 17:00:00'!
 checkInactivityTimeout
 	(activeSocket notNil and: [
-		(Time millisecondClockValue - activeSocketSetAt) / 1000.0 > self inactivityTimeoutSeconds])
+		(Time millisecondClockValue - activeSocketLastActivityAt) / 1000.0 > self inactivityTimeoutSeconds])
 		ifTrue: [
+			self log: 'freed stale active connection after ', self inactivityTimeoutSeconds printString, 's of inactivity'.
 			activeSocket destroy.
 			activeSocket := nil.
-			activeSocketSetAt := nil ]! !
+			activeSocketLastActivityAt := nil ]! !
 
-!McpBridgeServer class methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeServer class methodsFor: 'private' stamp: 'jlp 4/Sep/2026 17:00:00'!
 acceptOrRejectIncomingConnection
 	connectionQueue ifNotNil: [
 		| newSocket |
@@ -335,11 +383,13 @@ acceptOrRejectIncomingConnection
 				ifTrue: [ self rejectAsSessionBusy: newSocket ]
 				ifFalse: [
 					activeSocket := newSocket.
-					activeSocketSetAt := Time millisecondClockValue.
+					activeSocketLastActivityAt := Time millisecondClockValue.
+					self log: 'accepted connection from ', newSocket remoteAddressString.
 					(McpBridgeConnection on: newSocket) start ] ] ]! !
 
-!McpBridgeServer class methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeServer class methodsFor: 'private' stamp: 'jlp 4/Sep/2026 17:00:00'!
 rejectAsSessionBusy: aSocket
+	self log: 'rejected connection from ', aSocket remoteAddressString, ' as session_busy'.
 	[
 		| envelope |
 		envelope := Json render: (OrderedDictionary new
