@@ -98,6 +98,11 @@ necessarily this repo's root — wherever you'll be running Claude Code from):
 }
 ```
 
+Use a fully expanded absolute path here, not `~`. Option A can get away with `~/path/...`
+because your shell expands it before `claude` ever sees it; a `.mcp.json` file is read
+directly with no shell involved, so a literal `~` won't resolve and `node` will fail to find
+the file.
+
 **After registering either way:**
 
 1. Restart Claude Code (or start a new session) so it picks up the new server — MCP servers
