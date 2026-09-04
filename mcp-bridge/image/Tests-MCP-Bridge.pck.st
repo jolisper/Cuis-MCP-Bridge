@@ -45,6 +45,7 @@ setUp
 tearDown
 	clientSocket ifNotNil: [clientSocket destroy].
 	McpBridgeServer inactivityTimeoutSeconds: 60.
+	McpBridgeServer verbose: false.
 	McpBridgeServer stop.
 	super tearDown.! !
 
@@ -423,6 +424,32 @@ testListMethodsRequestForNonexistentClassOrInvalidSideGetsNotFoundError
 	expectedJson := '{"ok": false, "error": {"code": "not_found", "message": "side not found: ''', 'sideways', '''"}}', String lfString.
 	self assert: response equals: expectedJson! !
 
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 4/Sep/2026 18:30:00'!
+testListMethodsRequestForNonexistentProtocolGetsNotFoundErrorNotEmptyList
+	"Given a McpBridgeServer started on a test port with a client connected to it that has already completed a successful handshake"
+	| response expectedJson |
+	McpBridgeServer startOn: 17914.
+	clientSocket := Socket newTCP.
+	clientSocket
+		connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+		port: 17914.
+	clientSocket waitForConnectionFor: 2.
+	self assert: clientSocket isConnected.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 1}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 1}}', String lfString).
+
+	"When the client sends a list_methods request for an existing class and side, but a protocol name that does not exist on it"
+	clientSocket sendData: '{"op": "list_methods", "params": {"class": "McpBridgeConnection", "protocol": "NotARealProtocol12345", "side": "instance"}}', String lfString.
+
+	"Then the client receives a not_found error response naming the missing protocol, rather than a
+	misleading empty success result (the underlying Categorizer>>listAtCategoryNamed: silently
+	answers #() for an unknown category name, which would otherwise be indistinguishable from a
+	real, empty protocol)"
+	response := clientSocket receiveDataTimeout: 2.
+	expectedJson := '{"ok": false, "error": {"code": "not_found", "message": "protocol not found: ''NotARealProtocol12345''"}}', String lfString.
+	self assert: response equals: expectedJson! !
+
 !McpBridgeTests methodsFor: 'tests' stamp: 'jlp 4/Sep/2026 21:30:00'!
 testGetMethodSourceRequestGetsMethodSourceText
 	"Given a McpBridgeServer started on a test port with a client connected to it that has already completed a successful handshake"
@@ -606,3 +633,50 @@ testRequestLoopTerminatesCleanlyWhenSocketReceiveRaisesAnError
 
 	"Then the request-loop process ends itself instead of leaving the error unhandled, which would otherwise open an interactive debugger and leave the process suspended forever"
 	self assert: (connection instVarNamed: 'process') isTerminated! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 4/Sep/2026 17:00:00'!
+testVerboseDefaultsToFalse
+	"The verbose flag is off by default, since logging is opt-in"
+	self deny: McpBridgeServer verbose! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 4/Sep/2026 17:30:00'!
+testActiveConnectionSurvivesPastInactivityTimeoutWhenRequestsKeepArriving
+	"Given a McpBridgeServer with a short inactivity timeout, and a connection that keeps sending requests spaced closer together than that timeout"
+	| response |
+	McpBridgeServer inactivityTimeoutSeconds: 0.3.
+	McpBridgeServer startOn: 17913.
+	clientSocket := Socket newTCP.
+	clientSocket
+		connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+		port: 17913.
+	clientSocket waitForConnectionFor: 2.
+	self assert: clientSocket isConnected.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 1}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 1}}', String lfString).
+
+	"When the client sends two more requests, each within the timeout window of the previous one, but whose combined elapsed time exceeds the timeout"
+	(Delay forMilliseconds: 200) wait.
+	clientSocket sendData: '{"op": "list_categories", "params": {}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: (response includesSubstring: '"ok": true' caseSensitive: true).
+
+	(Delay forMilliseconds: 200) wait.
+	clientSocket sendData: '{"op": "list_categories", "params": {}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+
+	"Then the connection is still alive and answered the third request normally, since each gap between requests stayed under the timeout — activity, not mere age since accept, is what keeps a connection alive"
+	self assert: (response includesSubstring: '"ok": true' caseSensitive: true).
+	self assert: clientSocket isConnected! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 4/Sep/2026 17:00:00'!
+testVerboseCanBeSetAndRead
+	"Given verbose is set to true"
+	McpBridgeServer verbose: true.
+
+	"Then it reads back as true"
+	self assert: McpBridgeServer verbose.
+
+	"And setting it back to false reads back as false"
+	McpBridgeServer verbose: false.
+	self deny: McpBridgeServer verbose! !

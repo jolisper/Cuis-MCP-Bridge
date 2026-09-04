@@ -463,3 +463,107 @@ image: reproduced the original hang via repeated `list_methods` calls through th
 applied both fixes via File List re-fileIn, and confirmed the same call sequence — plus a
 recursive `get_method_source` call against `requestLoop` itself — now succeeds repeatedly
 with no hang.
+
+## Post-implementation: observability + two more stress-testing bugs
+
+Added opt-in Cuis-side observability (`McpBridgeServer verbose: true.`) logging
+connection/request activity to `Transcript` — accepted/rejected connections,
+inactivity-driven cleanup, and each request's op — timestamped via the same
+`DateAndTime now` + `time print24:showSeconds:on:` idiom `SystemDictionary>>setStartupStamp`
+uses for its own startup log line. This observability is what surfaced the two bugs below:
+their exact `Transcript` timestamps were the deciding evidence in both diagnoses.
+
+**Bug 1 — inactivity timeout measured connection age, not actual silence.**
+`activeSocketSetAt` (Cuis side) was set once at accept time and never refreshed, so
+`checkInactivityTimeout` measured *time since accept*, not *time since last activity* as the
+class comment always claimed ("freed after `inactivityTimeoutSeconds` of silence"). Any
+connection older than 60s got force-destroyed by the next 50ms poll tick, mid-use, even while
+actively serving requests — trivially reachable in any real (non-benchmark) session, since
+LLM-turn-paced tool calls routinely exceed 60s apart. Fixed by renaming the ivar to
+`activeSocketLastActivityAt` (honest name, single responsibility) and refreshing it from a new
+`McpBridgeServer class>>noteActivityFor:` guarded by identity against the current
+`activeSocket`, called from both `McpBridgeConnection>>sendSuccess:` and `>>sendError:message:`
+— i.e. after every response actually sent. Regression test:
+`testActiveConnectionSurvivesPastInactivityTimeoutWhenRequestsKeepArriving` (two requests,
+each within the timeout window of the last, whose combined elapsed time exceeds it). Verified
+headless: 27/27 SUnit tests pass (26 + this one; also added 2 tests for the new
+`verbose`/`verbose:` accessors).
+
+**Bug 2 — the Node-side handshake response listener never detached, so it kept treating
+every later operation error as if it were a handshake failure.** `CuisClient.connect()`
+(`cuisClient.ts`) registered `socket.on('data', ...)` to parse the one-shot handshake
+response, but never removed that listener afterward. Since every wire response — handshake or
+not — shares the same `{ok, ...}` envelope shape, this same listener kept firing for every
+subsequent request/response too. Its `else` branch (anything other than `protocol_mismatch`)
+unconditionally called `socket.end()` — so *any* ordinary operation error response
+(`not_found`, `invalid_request`, etc.) silently closed the connection right after correctly
+delivering the error to the caller, and the next request on the (now half-closed) socket
+failed with a raw Node `write after end` `unreachable` error instead of running normally.
+Root-caused via `verbose` Transcript evidence (exact-second timestamps showing Cuis's own
+`socket isConnected` check going false immediately after handling an ordinary `not_found`, not
+after any real timeout) cross-checked against `lsof` showing the Node side in `FIN_WAIT_2` —
+i.e. the client itself, not Cuis, initiated the close. Fixed by splitting the handshake-only
+listener (detached via `socket.off:` once one full line is parsed, handling multi-chunk
+fragmentation correctly along the way) from a new steady-state `attachResponseHandler`
+installed only after a successful handshake, which resolves/rejects the pending request for
+*any* response shape without ever closing the socket — only the handshake-phase listener still
+does that, and only for its own two genuinely fatal branches. `attachResponseHandler` also
+loops over all complete lines in the buffer per `data` event (`while`, not `if`), fixing a
+latent framing bug found alongside it: multiple responses coalesced into one TCP chunk used to
+leave everything after the first line stuck unprocessed until the next chunk arrived. Regression
+test: `keeps the connection open after an ordinary operation error response, so a later request
+on the same connection still succeeds`. Verified: 11/11 Vitest tests pass (10 + this one), and
+manually reproduced end-to-end through the live bridge (the exact `category: ''` → `category:
+'json'` sequence that used to fail with `write after end` now returns clean `not_found`
+responses on the same connection, confirmed via a rebuilt `dist/index.js` and a fresh MCP
+reconnect).
+
+## Post-implementation: two more stress-testing findings, plus a self-inflicted false alarm
+
+**Fixed `Transcript` usage against real Cuis convention, discovered by inspecting `Transcript`
+itself through the bridge.** The initial `verbose` logging (added above) used `show:`/`newLine`
+and a hand-rolled seconds-precision timestamp copied from `SystemDictionary>>setStartupStamp`'s
+idiom. Reflecting on `Transcript`'s own class comment and protocols revealed `show:`/`newLine`
+are filed under `'old Transcript compatibility'` — legacy — while the actual preferred protocol
+is a single method, `Transcript log:`. Its own `addEntry:` already timestamps with **millisecond**
+precision (`DateAndTime now printWithMsOn:`, not just seconds), tags each entry with the logging
+`Process`'s priority and identity hash, is thread-safe (`accessSemaphore critical:` — matters
+here, since `pollLoop` and each connection's `requestLoop` are concurrent `Process`es), and
+sanitizes embedded newlines. Rewrote `McpBridgeServer class>>log:` to delegate to `Transcript
+log:` instead of reimplementing all of that by hand. Also added `params:` (JSON-rendered via
+`Json render:`, matching the wire format instead of `printString`'s Smalltalk-y `an
+OrderedDictionary(...)` noise) to the per-request log line. Separately, `Transcript logToFile:
+true` (also discovered via its class comment/protocol) writes every entry to a real file —
+`Cuis7-8-main-UserFiles/Logs/transcript.txt` — letting the *agent* read connection/request
+activity directly instead of relying on the user pasting Transcript screenshots each time.
+
+**Bug — `list_methods` returned an empty list instead of `not_found` for a nonexistent
+protocol name.** `handleListMethods:` called `target organization listAtCategoryNamed: protocol
+asSymbol` with no existence check, unlike `handleListClasses:`'s explicit `SystemOrganization
+categories includes:` guard for the exact same kind of lookup. Root cause: `Categorizer
+>>listAtCategoryNamed:` (the Cuis kernel method backing `organization`) silently answers `#()`
+for an unknown category name by design — harmless for the kernel's own purposes, but for this
+bridge it meant a typo'd protocol name was indistinguishable from a real, empty one. Fixed by
+adding the same existence check `handleListClasses:` already had. Regression test:
+`testListMethodsRequestForNonexistentProtocolGetsNotFoundErrorNotEmptyList`.
+
+**Design fix — a self-inflicted "false alarm" in the inactivity-cleanup log line, caught by the
+user reviewing the new `Transcript` logging output.** Every receive-time error in `requestLoop`
+was logged identically as `'connection ended: receive error: ', ex class name, ...` — including
+the *entirely expected* `SocketPrimitiveFailed` that fires when `checkInactivityTimeout` had
+already destroyed that exact socket a moment earlier (itself already logged separately as `'freed
+stale active connection...'`). Read side-by-side, an expected, self-inflicted cleanup looked like
+two unrelated alarming errors. First proposed fix — `McpBridgeConnection` asking `McpBridgeServer
+isCurrentActiveSocket: aSocket` and branching on the answer — was rightly rejected by the user
+for violating tell-don't-ask (the connection querying the server's state to make its own
+decision). Corrected to `McpBridgeServer class>>logConnectionEndedFor:aSocket dueTo:anException`:
+the connection merely *tells* the server what happened; the server — sole owner of the
+`activeSocket` concept — decides entirely on its own whether that's a superseded/expected
+closure (`'connection closed (already superseded)'`) or a genuine receive error, mirroring the
+`noteActivityFor:` pattern already established for the exact same kind of identity check.
+Verified live end-to-end: forced a real 60s-idle cleanup through the bridge and confirmed the
+`Transcript` log file shows the quieter message instead of the alarming one.
+
+Headless SUnit: 28/28 passing (27 + the new `list_methods` regression test; the log-severity fix
+has no independently observable wire-protocol behavior, so no dedicated test was added for it —
+consistent with not asserting `Transcript` content elsewhere in this suite).
