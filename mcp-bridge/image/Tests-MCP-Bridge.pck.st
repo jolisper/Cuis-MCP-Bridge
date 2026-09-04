@@ -16,6 +16,27 @@ TestCase subclass: #McpBridgeTests
 McpBridgeTests class
 	instanceVariableNames: ''!
 
+!classDefinition: #McpBridgeFailingSocketStub category: #'Tests-MCP-Bridge'!
+Object subclass: #McpBridgeFailingSocketStub
+	instanceVariableNames: ''
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Tests-MCP-Bridge'!
+!classDefinition: 'McpBridgeFailingSocketStub class' category: #'Tests-MCP-Bridge'!
+McpBridgeFailingSocketStub class
+	instanceVariableNames: ''!
+
+!McpBridgeFailingSocketStub commentStamp: 'jlp 4/Sep/2026 16:15:00' prior: 0!
+I stand in for a real Socket in tests, simulating a VM-level primitive failure (like the real `SocketPrimitiveFailed` seen from `receiveDataTimeout:`) instead of ever returning data.!
+
+!McpBridgeFailingSocketStub methodsFor: 'simulating' stamp: 'jlp 4/Sep/2026 16:15:00'!
+receiveDataTimeout: seconds
+	^ Error signal: 'primSocketReceiveDataAvailable: failed (simulated)'! !
+
+!McpBridgeFailingSocketStub methodsFor: 'simulating' stamp: 'jlp 4/Sep/2026 16:15:00'!
+isConnected
+	^ false! !
+
 !McpBridgeTests methodsFor: 'running' stamp: 'jlp 3/Sep/2026 20:55:58'!
 setUp
 	super setUp.! !
@@ -572,3 +593,16 @@ testGetClassCommentRequestForUncommentedClassGetsNullResult
 	response := clientSocket receiveDataTimeout: 2.
 	expectedJson := '{"ok": true, "result": null}', String lfString.
 	self assert: response equals: expectedJson! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 4/Sep/2026 16:15:00'!
+testRequestLoopTerminatesCleanlyWhenSocketReceiveRaisesAnError
+	"Given a McpBridgeConnection whose underlying socket raises an Error from receiveDataTimeout: (simulating a real VM primitive failure like SocketPrimitiveFailed)"
+	| connection |
+	connection := McpBridgeConnection on: McpBridgeFailingSocketStub new.
+
+	"When the connection's request loop is started"
+	connection start.
+	(Delay forMilliseconds: 200) wait.
+
+	"Then the request-loop process ends itself instead of leaving the error unhandled, which would otherwise open an interactive debugger and leave the process suspended forever"
+	self assert: (connection instVarNamed: 'process') isTerminated! !

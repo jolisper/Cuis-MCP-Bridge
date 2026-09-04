@@ -60,24 +60,29 @@ start
 	process name: 'McpBridgeConnection request loop'.
 	process resume.! !
 
-!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 16:00:00'!
 requestLoop
 	[
 		| line request op selector |
-		line := socket receiveDataTimeout: 5.
-		line isEmpty ifTrue: [ ^self ].
-		request := self parseRequest: line.
-		request
-			ifNil: [ self sendError: 'invalid_request' message: 'malformed JSON request' ]
-			ifNotNil: [
-				[
-					op := request at: 'op' ifAbsent: [nil].
-					selector := self operationHandlers at: op ifAbsent: [nil].
-					selector
-						ifNotNil: [ self perform: selector with: request ]
-						ifNil: [ self sendError: 'invalid_request' message: 'unrecognized operation: ', op ]
-				] on: Error do: [:ex |
-					self sendError: 'internal_error' message: 'unexpected error handling request: ', ex messageText ] ].
+		line := [socket receiveDataTimeout: 5] on: Error do: [:ex | ^self].
+		line isEmpty
+			ifFalse: [
+				request := self parseRequest: line.
+				request
+					ifNil: [ self sendError: 'invalid_request' message: 'malformed JSON request' ]
+					ifNotNil: [
+						[
+							op := request at: 'op' ifAbsent: [nil].
+							selector := self operationHandlers at: op ifAbsent: [nil].
+							selector
+								ifNotNil: [ self perform: selector with: request ]
+								ifNil: [ self sendError: 'invalid_request' message: 'unrecognized operation: ', op ]
+						] on: Error do: [:ex |
+							self sendError: 'internal_error' message: 'unexpected error handling request: ', ex messageText ] ] ].
+		"An empty read means either a real timeout with no data (socket still open — keep
+		waiting) or the peer closed (socket no longer connected) — only the latter should
+		end the loop. Conflating the two used to silently kill this process on a mere
+		timeout, orphaning the TCP connection with nothing left to service it."
 		socket isConnected ifFalse: [ ^self ]
 	] repeat! !
 
