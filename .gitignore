@@ -20,3 +20,7 @@ UserChanges/
 #Generated Cuis user files (change logs, new packages) — nothing here is versioned
 Cuis7-8-main-UserFiles/
 
+#Frozen image/sources/changes cache for tools/run-headless-tests.sh, lazily
+#rebuilt from Cuis7-8-main.zip — not versioned, regenerated on demand
+.headless-base/
+
