@@ -2,14 +2,14 @@
 'Description '!
 !provides: 'LispEvaluator' 1 1!
 !requires: 'Cuis-Base' 60 5557 nil!
-SystemOrganization addCategory: #'LispEvaluator'!
+SystemOrganization addCategory: #'Lisp-Evaluator'!
 
-!classDefinition: #LispEvaluator category: #'LispEvaluator'!
+!classDefinition: #LispEvaluator category: #'Lisp-Evaluator'!
 Object subclass: #LispEvaluator
 	instanceVariableNames: ''
 	classVariableNames: ''
 	poolDictionaries: ''
-	category: 'LispEvaluator'!
+	category: 'Lisp-Evaluator'!
 
 !LispEvaluator methodsFor: 'tests' stamp: 'jlp 8/Sep/2026 10:00:00'!
 eval: anExpression env: anEnvironment

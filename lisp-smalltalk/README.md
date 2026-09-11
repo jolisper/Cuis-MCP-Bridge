@@ -125,6 +125,50 @@ so every element past the first ate one extra character. Fixed by splitting
 into `parseListAfterOpenParen` (consumes the `(` once) and `parseListElements`
 (the actual recursive body, expecting no `(`).
 
+## Evaluator (in progress)
+
+`LispEvaluator` — built incrementally, one concept at a time: each step gets
+its own commit with a didactic explanation, and a pause to play with that
+version in the live image before moving on.
+
+- **Step 1 (done): self-evaluating atoms.** `eval: anExpression env: anEnvironment`
+  returns numbers as-is. This is the base case of the recursion — not every
+  expression needs reduction; some data is already its own value.
+
+Tests in `lisp-smalltalk/Tests-LispEvaluator.pck.st`.
+
+## Testing
+
+To run a suite, use `tools/run-headless-tests.sh` from the project root:
+
+```bash
+bash tools/run-headless-tests.sh lisp-smalltalk/run-tests.st           # LispReader
+bash tools/run-headless-tests.sh lisp-smalltalk/run-tests-evaluator.st # LispEvaluator
+```
+
+## Package structure
+
+The project is organized into three focused packages:
+
+- **`LispReader.pck.st`** — Reader/parser for Lisp source text
+- **`LispEvaluator.pck.st`** — Core evaluator implementation (Step 1: atoms)
+- **`LispWorkspace.pck.st`** — REPL UI (`LispWorkspace` workspace + `LispEditor` editor)
+
+There is also a **`meta-package`** `Lisp.pck.st` that aggregates all three components:
+
+```smalltalk
+!provides: 'Lisp' 1 1!
+!requires: 'LispReader' 1 1 nil!
+!requires: 'LispEvaluator' 1 1 nil!
+!requires: 'LispWorkspace' 1 1 nil!
+```
+
+Install the meta-package to load everything at once:
+
+```smalltalk
+CodePackageFile installPackage: (DirectoryEntry currentDirectory // 'lisp-smalltalk/Lisp.pck.st').
+```
+
 ## REPL window (prototype, dummy evaluator)
 
 `LispWorkspace.pck.st` — a working proof that Cuis's `Workspace`/`TextEditor`
@@ -156,5 +200,6 @@ LispWorkspace new contents: ''; openLabel: 'Lisp Workspace'.
 - [x] REPL-window UI proven out end-to-end (dummy evaluator)
 - [x] Primitive naming decided (this document)
 - [ ] Real evaluator (`eval: expr env:`) implementing the primitives above
+      (Step 1/9 done — self-evaluating atoms; see "Evaluator" above)
 - [ ] Wire `LispEditor>>printIt` to the real evaluator instead of the `reversed`
       dummy
