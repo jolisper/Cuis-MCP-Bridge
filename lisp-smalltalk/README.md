@@ -134,6 +134,14 @@ version in the live image before moving on.
 - **Step 1 (done): self-evaluating atoms.** `eval: anExpression env: anEnvironment`
   returns numbers as-is. This is the base case of the recursion — not every
   expression needs reduction; some data is already its own value.
+- **Step 2 (done): wire the REPL to the real evaluator.** `LispEditor>>printIt`
+  no longer reverses text — it reads the selection with `LispReader`, evaluates
+  it with `LispEvaluator`, and prints the result. Moved this up from "last
+  step" to "right after step 1" precisely so every following step is playable
+  in the live Workspace as soon as it lands, instead of only at the very end.
+  `LispEditor` also gained an `environment` instance variable, persistent
+  across evaluations in that window (unused — nil — until Step 4 gives it a
+  real environment to hold).
 
 Tests in `lisp-smalltalk/Tests-LispEvaluator.pck.st`.
 
@@ -163,13 +171,37 @@ There is also a **`meta-package`** `Lisp.pck.st` that aggregates all three compo
 !requires: 'LispWorkspace' 1 1 nil!
 ```
 
-Install the meta-package to load everything at once:
+Two ways to install a package in Cuis, and only one of them actually reads `!requires:`:
+
+- **`CodePackageFile installPackage:`** (what the File List Browser's "install" does,
+  and what the headless test scripts call) installs *only that one file*. It parses
+  the `!requires:` lines and stores them as metadata on the resulting `CodePackage` —
+  but nothing ever reads that metadata back to load anything. Verified this via the
+  MCP bridge: `CodePackageFile>>install` calls `featureSpec:` (a plain setter) and
+  stops there.
+- **`Feature require: aFeatureNameOrFilename`** is the mechanism that actually
+  *consumes* `!requires:`: it builds the transitive closure of declared requirements,
+  searches for each one (including the requiring package's own folder — no relative
+  path needed for siblings in the same directory), and installs them in dependency
+  order before installing the one you asked for.
+
+So installing `Lisp.pck.st` via the File List Browser only ever installed the
+meta-package's own (empty) chunk — the category, nothing else — which is exactly the
+"categories exist but are empty" symptom hit while wiring this up. `Feature require:`
+is the standard, correct way to load it:
 
 ```smalltalk
-CodePackageFile installPackage: (DirectoryEntry currentDirectory // 'lisp-smalltalk/Lisp.pck.st').
+Feature require: (DirectoryEntry projectBaseDirectory // 'lisp-smalltalk/Lisp.pck.st') pathName.
 ```
 
-## REPL window (prototype, dummy evaluator)
+(`projectBaseDirectory`, not `currentDirectory`: the latter is the OS process's cwd,
+which for an interactively-launched image is wherever it happened to be launched from
+— not necessarily this repo. `projectBaseDirectory` is derived from where the running
+`.image` file itself lives on disk, so it resolves to this repo root regardless of how
+the image was launched — confirmed by evaluating `DirectoryEntry projectBaseDirectory
+pathName` in the live image.)
+
+## REPL window
 
 `LispWorkspace.pck.st` — a working proof that Cuis's `Workspace`/`TextEditor`
 machinery can host a Lisp REPL, built by exploring the live image via the bridge
@@ -184,9 +216,11 @@ rather than guessing:
   compiler involved), and implements `printIt`/`defaultMenuSpec` itself, since
   plain `TextEditor` has no do-its at all (those live only in `SmalltalkEditor`
   today).
-- `LispEditor>>printIt` is currently a **dummy**: it reverses the selected text
-  and inserts the result, just to validate the full interaction (select text →
-  evaluate → insert result) before wiring a real evaluator.
+- `LispEditor>>printIt` originally reversed the selected text as a dummy, just
+  to validate the full interaction (select text → evaluate → insert result)
+  before an evaluator existed. It's now wired to the real `LispReader` +
+  `LispEvaluator` (Step 2 of the evaluator, above) — so this window doubles as
+  the playground for every evaluator step from here on.
 
 Open it with:
 
@@ -199,7 +233,7 @@ LispWorkspace new contents: ''; openLabel: 'Lisp Workspace'.
 - [x] Reader/parser, with tests
 - [x] REPL-window UI proven out end-to-end (dummy evaluator)
 - [x] Primitive naming decided (this document)
+- [x] Wire `LispEditor>>printIt` to the real evaluator
 - [ ] Real evaluator (`eval: expr env:`) implementing the primitives above
-      (Step 1/9 done — self-evaluating atoms; see "Evaluator" above)
-- [ ] Wire `LispEditor>>printIt` to the real evaluator instead of the `reversed`
-      dummy
+      (Step 2/10 done — self-evaluating atoms wired to the REPL; see
+      "Evaluator" above)
