@@ -12,7 +12,8 @@ stdio to Claude Code on one side and NDJSON over TCP to the image on the other. 
 ## Prerequisites
 
 - Node.js >= 20 (see `server/package.json`'s `engines` field).
-- A Cuis 7.8 image. This repo already has one at `Cuis7-8-main/`.
+- A Cuis 7.8 image. Not versioned in this repo — run `tools/fetch-cuis.sh` from the repo root
+  to download one to `Cuis7-8-main/`.
 
 ## 1. Build the bridge process
 
