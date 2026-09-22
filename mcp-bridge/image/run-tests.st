@@ -2,8 +2,8 @@
 Utilities setAuthorName: 'Jorge Luis Perez' initials: 'jlp'.
 Transcript logToStdout: true.
 [
-	CodePackageFile installPackage: (DirectoryEntry currentDirectory // 'Cuis7-8-main/Packages/Features/JSON.pck.st').
-	CodePackageFile installPackage: (DirectoryEntry currentDirectory // 'Cuis7-8-main/Packages/System/Network-Kernel.pck.st').
+	CodePackageFile installPackage: (DirectoryEntry currentDirectory // '.headless-base/JSON.pck.st').
+	CodePackageFile installPackage: (DirectoryEntry currentDirectory // '.headless-base/Network-Kernel.pck.st').
 	CodePackageFile installPackage: (DirectoryEntry currentDirectory // 'mcp-bridge/image/MCP-Bridge.pck.st').
 	CodePackageFile installPackage: (DirectoryEntry currentDirectory // 'mcp-bridge/image/Tests-MCP-Bridge.pck.st').
 ] on: ParserNotification do: [ :ex |

@@ -41,7 +41,7 @@ fi
 # Lazily populate the frozen base (image/sources/changes) from the pristine
 # zip the first time this runs, or if it's missing/incomplete. Never derived
 # from the mutable working image, so it can never inherit its corruption.
-if [ ! -f "$FROZEN_BASE/Cuis7.8.image" ] || [ ! -f "$FROZEN_BASE/Cuis7.8.sources" ]; then
+if [ ! -f "$FROZEN_BASE/Cuis7.8.image" ] || [ ! -f "$FROZEN_BASE/Cuis7.8.sources" ] || [ ! -f "$FROZEN_BASE/JSON.pck.st" ] || [ ! -f "$FROZEN_BASE/Network-Kernel.pck.st" ]; then
 	if [ ! -f "$ZIP_PATH" ]; then
 		echo "HARNESS: frozen base missing and $ZIP_PATH not found to build it from" >&2
 		exit 2
@@ -54,6 +54,8 @@ if [ ! -f "$FROZEN_BASE/Cuis7.8.image" ] || [ ! -f "$FROZEN_BASE/Cuis7.8.sources
 	cp "$TMP_EXTRACT/Cuis7-8-main/CuisImage/Cuis7.8.image" "$FROZEN_BASE/Cuis7.8.image"
 	cp "$TMP_EXTRACT/Cuis7-8-main/CuisImage/Cuis7.8.sources" "$FROZEN_BASE/Cuis7.8.sources"
 	cp "$TMP_EXTRACT/Cuis7-8-main/CuisImage/Cuis7.8.changes" "$FROZEN_BASE/Cuis7.8.changes"
+	cp "$TMP_EXTRACT/Cuis7-8-main/Packages/Features/JSON.pck.st" "$FROZEN_BASE/JSON.pck.st"
+	cp "$TMP_EXTRACT/Cuis7-8-main/Packages/System/Network-Kernel.pck.st" "$FROZEN_BASE/Network-Kernel.pck.st"
 	rm -rf "$TMP_EXTRACT"
 fi
 
