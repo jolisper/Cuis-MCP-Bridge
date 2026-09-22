@@ -42,7 +42,7 @@ arbitrary code (functional-spec invariants 17, 18).
 A single integer constant, starting at:
 
 ```
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 ```
 
 Both sides hold this constant (Cuis-side: a class-side constant on `McpBridgeServer` or a
@@ -105,7 +105,7 @@ Every message after the handshake follows the same two shapes.
 {"op": "<operation_name>", "params": { ... }}
 ```
 
-- `op` (string, required): one of the 7 operation names below (or `handshake`, handshake
+- `op` (string, required): one of the 9 operation names below (or `handshake`, handshake
   only).
 - `params` (object, required, may be `{}`): the operation's parameters, as documented per
   operation below.
@@ -140,7 +140,7 @@ answered with `invalid_request` (see below) and never crashes the connection loo
 
 ## Operations
 
-All 7 operations are read-only reflection calls; none accepts a value that names code to
+All 9 operations are read-only reflection calls; none accepts a value that names code to
 compile or evaluate.
 
 ### `list_categories`
@@ -265,6 +265,30 @@ when there is none).
 ```json
 {"op": "get_class_comment", "params": {"class": "SomeUncommentedClass"}}
 {"ok": true, "result": null}
+```
+
+### `list_senders_of`
+
+- **Params**:
+  - `selector` (string, required): the message selector to find senders of.
+- **Success result**: array of objects, each `{"class": string, "selector": string, "side": "instance"|"class"}`, one per method in the image whose compiled body references `selector`. Each row's own `selector` field names the *containing* method (the one doing the referencing), not the queried selector — these are generally different. Sorted by `class` alphabetically, then instance-side before class-side, then the row's own `selector` alphabetically. An empty array is a normal result, not an error.
+- **Errors**: `invalid_request` if `selector` is missing, empty, or not a string. There is no `not_found` case — a selector with zero senders simply returns `[]`.
+
+```json
+{"op": "list_senders_of", "params": {"selector": "addLast:"}}
+{"ok": true, "result": [{"class": "OrderedCollection", "selector": "add:", "side": "instance"}]}
+```
+
+### `list_implementors_of`
+
+- **Params**:
+  - `selector` (string, required): the message selector to find implementors of.
+- **Success result**: array of objects, each `{"class": string, "selector": string, "side": "instance"|"class"}`, one per method in the image that implements `selector`. Every row's own `selector` field equals the queried `selector`. Same sort order as `list_senders_of`. An empty array is a normal result, not an error.
+- **Errors**: `invalid_request` if `selector` is missing, empty, or not a string. No `not_found` case, same reasoning as `list_senders_of`.
+
+```json
+{"op": "list_implementors_of", "params": {"selector": "add:"}}
+{"ok": true, "result": [{"class": "OrderedCollection", "selector": "add:", "side": "instance"}, {"class": "Set", "selector": "add:", "side": "instance"}]}
 ```
 
 ## Error codes

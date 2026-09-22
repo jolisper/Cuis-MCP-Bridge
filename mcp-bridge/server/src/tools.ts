@@ -91,6 +91,26 @@ const TOOL_METADATA: ToolMeta[] = [
       required: ['class'],
     },
   },
+  {
+    name: 'list_senders_of',
+    description:
+      'List methods that reference a given selector (senders), sorted by class then side then selector.',
+    inputSchema: {
+      type: 'object',
+      properties: { selector: { type: 'string' } },
+      required: ['selector'],
+    },
+  },
+  {
+    name: 'list_implementors_of',
+    description:
+      'List methods that implement a given selector, sorted by class then side then selector.',
+    inputSchema: {
+      type: 'object',
+      properties: { selector: { type: 'string' } },
+      required: ['selector'],
+    },
+  },
 ];
 
 /** True if `err` is an `Error` carrying a `code` property, as thrown by `CuisClient`. */
@@ -99,7 +119,7 @@ function hasErrorCode(err: unknown): err is Error & { code: string } {
 }
 
 /**
- * Builds the MCP tool definitions for the 7 read-only reflection operations, each
+ * Builds the MCP tool definitions for the 9 read-only reflection operations, each
  * wired to `client` via a shared handler that forwards `args` as `sendRequest`
  * params and maps any rejection to an MCP error result instead of throwing.
  */

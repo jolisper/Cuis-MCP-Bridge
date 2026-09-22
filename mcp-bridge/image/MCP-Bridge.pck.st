@@ -1,6 +1,6 @@
 'From Cuis7.8 [latest update: #7959] on 3 September 2026 at 8:55:58 pm'!
 'Description '!
-!provides: 'MCP-Bridge' 1 1!
+!provides: 'MCP-Bridge' 1 2!
 !requires: 'Cuis-Base' 60 5557 nil!
 !requires: 'JSON' 1 29 nil!
 !requires: 'Network-Kernel' 1 12 nil!
@@ -49,7 +49,7 @@ on: aSocket
 
 !McpBridgeConnection class methodsFor: 'accessing' stamp: 'jlp 3/Sep/2026 20:55:58'!
 protocolVersion
-	^ 1! !
+	^ 2! !
 
 !McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
 setSocket: aSocket
@@ -94,7 +94,7 @@ requestLoop
 			^self ]
 	] repeat! !
 
-!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+!McpBridgeConnection methodsFor: 'private' stamp: 'claude 19/Sep/2026 19:35:00'!
 operationHandlers
 	^ Dictionary new
 		at: 'handshake' put: #handleHandshake:;
@@ -105,6 +105,8 @@ operationHandlers
 		at: 'get_method_source' put: #handleGetMethodSource:;
 		at: 'get_class_definition' put: #handleGetClassDefinition:;
 		at: 'get_class_comment' put: #handleGetClassComment:;
+		at: 'list_implementors_of' put: #handleListImplementorsOf:;
+		at: 'list_senders_of' put: #handleListSendersOf:;
 		yourself! !
 
 !McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
@@ -194,6 +196,48 @@ handleGetClassComment: request
 	aClass ifNil: [^self].
 	self sendSuccess: (aClass hasComment ifTrue: [aClass comment] ifFalse: [nil])! !
 
+!McpBridgeConnection methodsFor: 'private' stamp: 'claude 19/Sep/2026 19:35:00'!
+handleListImplementorsOf: request
+	| selector |
+	selector := self selectorParamFrom: request.
+	selector ifNil: [^self].
+	self sendSuccess: (self methodReferenceArrayFrom: (Smalltalk allImplementorsOf: selector asSymbol))! !
+
+!McpBridgeConnection methodsFor: 'private' stamp: 'claude 19/Sep/2026 21:30:00'!
+handleListSendersOf: request
+	| selector |
+	selector := self selectorParamFrom: request.
+	selector ifNil: [^self].
+	self sendSuccess: (self methodReferenceArrayFrom: (Smalltalk allCallsOn: selector asSymbol))! !
+
+!McpBridgeConnection methodsFor: 'private' stamp: 'claude 19/Sep/2026 21:30:00'!
+selectorParamFrom: request
+	| selector |
+	selector := self paramNamed: 'selector' from: request.
+	(selector isKindOf: String)
+		ifFalse: [
+			self sendError: 'invalid_request' message: 'missing or invalid selector param'.
+			^nil ].
+	^selector! !
+
+!McpBridgeConnection methodsFor: 'private' stamp: 'claude 19/Sep/2026 21:30:00'!
+methodReferenceArrayFrom: aMethodReferenceCollection
+	| sorted |
+	sorted := aMethodReferenceCollection
+		asSortedCollection: [:a :b |
+			a classSymbol asString = b classSymbol asString
+				ifTrue: [
+					a classIsMeta = b classIsMeta
+						ifTrue: [ a methodSymbol asString <= b methodSymbol asString ]
+						ifFalse: [ a classIsMeta not ] ]
+				ifFalse: [ a classSymbol asString <= b classSymbol asString ]].
+	^ (sorted collect: [:each |
+		OrderedDictionary new
+			at: 'class' put: each classSymbol asString;
+			at: 'selector' put: each methodSymbol asString;
+			at: 'side' put: (each classIsMeta ifTrue: ['class'] ifFalse: ['instance']);
+			yourself]) asArray! !
+
 !McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 22:30:00'!
 resolveClassNamed: aString
 	^ Smalltalk at: aString asSymbol ifAbsent: [
@@ -225,13 +269,14 @@ paramNamed: aKey from: request
 sortedStringArrayFrom: aCollection
 	^ (aCollection asSortedCollection collect: [:each | each asString]) asArray! !
 
-!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 4/Sep/2026 17:30:00'!
+!McpBridgeConnection methodsFor: 'private' stamp: 'claude 19/Sep/2026 21:30:00'!
 sendSuccess: aResult
 	| envelope |
 	envelope := Json render: (OrderedDictionary new
 		at: 'ok' put: true;
 		at: 'result' put: aResult;
 		yourself).
+	envelope := (envelope copyWithout: Character lf) copyWithout: Character cr.
 	socket sendData: envelope , String lfString.
 	McpBridgeServer noteActivityFor: socket! !
 

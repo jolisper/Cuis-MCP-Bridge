@@ -112,7 +112,7 @@ the file.
    Claude Code session. `cuis-mcp-bridge` should show as connected. If it shows as failed,
    double-check the path in the config is absolute and that `npm run build` actually produced
    `dist/index.js` (step 1).
-3. The 7 tools listed below (`list_categories`, `list_classes`, etc.) should now be available
+3. The 9 tools listed below (`list_categories`, `list_classes`, etc.) should now be available
    to Claude Code for use in conversation.
 
 Check Claude Code's own MCP documentation if this registration format has changed since
@@ -145,6 +145,10 @@ whole bridge failing to start.
 - `get_class_definition` — Get a class's definition: superclass, instance/class variable names,
   and category.
 - `get_class_comment` — Get a class's comment text, or null if it has none.
+- `list_senders_of` — List methods that reference a given selector (senders), sorted by class
+  then side then selector.
+- `list_implementors_of` — List methods that implement a given selector, sorted by class then
+  side then selector.
 
 ## Troubleshooting
 
