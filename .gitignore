@@ -15,3 +15,18 @@ Cuis7-8-main-UserFiles/
 #rebuilt from Cuis7-8-main.zip — not versioned, regenerated on demand
 .headless-base/
 
+#OpenSmalltalk VM source, fetched on demand by tools/fetch-vm.sh — not versioned
+opensmalltalk-vm/
+
+#Compiled plugin build output (.o files, .bundle binaries) for plugins built
+#outside the opensmalltalk-vm tree (e.g. Zig plugins) — not versioned, rebuilt
+#from vm-exploration/plugins/*/ source on demand
+vm-exploration/build/
+
+#Transcript logs the VM writes wherever it happens to run from (e.g. interactive
+#GUI launches from the repo root) — not versioned
+Logs/
+
+#build.zig's own cache — not versioned, rebuilt on demand
+.zig-cache/
+
