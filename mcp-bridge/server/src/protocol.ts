@@ -10,7 +10,7 @@
  */
 
 /** The wire protocol version this bridge process is built against. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** The six error codes defined by the wire protocol, exact snake_case spelling. */
 export type ErrorCode =
@@ -110,6 +110,21 @@ export interface ListImplementorsOfParams {
 }
 export type ListImplementorsOfResult = MethodReferenceEntry[];
 
+export interface GetVmVersionParams {}
+export type GetVmVersionResult = string;
+
+export interface GetPlatformNameParams {}
+export type GetPlatformNameResult = string;
+
+export interface GetPlatformSubtypeParams {}
+export type GetPlatformSubtypeResult = string;
+
+export interface GetLoadedModulesParams {}
+export interface GetLoadedModulesResult {
+  builtin: string[];
+  loaded: string[];
+}
+
 // --- Generic request envelope and per-operation discriminated union --------------------
 
 /** Generic request envelope: any operation name paired with a params object. */
@@ -118,7 +133,7 @@ export interface McpBridgeRequest {
   params: Record<string, unknown>;
 }
 
-/** Discriminated union of the 9 read-only reflection operations' requests. */
+/** Discriminated union of the 13 read-only reflection operations' requests. */
 export type McpBridgeOperationRequest =
   | { op: 'list_categories'; params: ListCategoriesParams }
   | { op: 'list_classes'; params: ListClassesParams }
@@ -128,7 +143,11 @@ export type McpBridgeOperationRequest =
   | { op: 'get_class_definition'; params: GetClassDefinitionParams }
   | { op: 'get_class_comment'; params: GetClassCommentParams }
   | { op: 'list_senders_of'; params: ListSendersOfParams }
-  | { op: 'list_implementors_of'; params: ListImplementorsOfParams };
+  | { op: 'list_implementors_of'; params: ListImplementorsOfParams }
+  | { op: 'get_vm_version'; params: GetVmVersionParams }
+  | { op: 'get_platform_name'; params: GetPlatformNameParams }
+  | { op: 'get_platform_subtype'; params: GetPlatformSubtypeParams }
+  | { op: 'get_loaded_modules'; params: GetLoadedModulesParams };
 
 // --- Handshake --------------------------------------------------------------------------
 

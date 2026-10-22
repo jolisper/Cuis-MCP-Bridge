@@ -42,7 +42,7 @@ arbitrary code (functional-spec invariants 17, 18).
 A single integer constant, starting at:
 
 ```
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 ```
 
 Both sides hold this constant (Cuis-side: a class-side constant on `McpBridgeServer` or a
@@ -61,7 +61,7 @@ any tool request, the client and server exchange exactly one handshake request/r
 **Handshake request** (bridge → Cuis, first line on the wire):
 
 ```json
-{"op": "handshake", "params": {"protocol_version": 1}}
+{"op": "handshake", "params": {"protocol_version": 3}}
 ```
 
 - `protocol_version` (integer, required): the `PROTOCOL_VERSION` the bridge process was
@@ -70,7 +70,7 @@ any tool request, the client and server exchange exactly one handshake request/r
 **Handshake response, version match** (Cuis → bridge):
 
 ```json
-{"ok": true, "result": {"protocol_version": 1}}
+{"ok": true, "result": {"protocol_version": 3}}
 ```
 
 - `protocol_version` (integer): the `PROTOCOL_VERSION` the Cuis-side package was loaded
@@ -79,7 +79,7 @@ any tool request, the client and server exchange exactly one handshake request/r
 **Handshake response, version mismatch** (Cuis → bridge):
 
 ```json
-{"ok": false, "error": {"code": "protocol_mismatch", "message": "protocol version mismatch: expected 1, got 2"}}
+{"ok": false, "error": {"code": "protocol_mismatch", "message": "protocol version mismatch: expected 3, got 2"}}
 ```
 
 - The `message` names both versions: the one the bridge sent (expected, from the client's
@@ -105,7 +105,7 @@ Every message after the handshake follows the same two shapes.
 {"op": "<operation_name>", "params": { ... }}
 ```
 
-- `op` (string, required): one of the 9 operation names below (or `handshake`, handshake
+- `op` (string, required): one of the 13 operation names below (or `handshake`, handshake
   only).
 - `params` (object, required, may be `{}`): the operation's parameters, as documented per
   operation below.
@@ -140,7 +140,7 @@ answered with `invalid_request` (see below) and never crashes the connection loo
 
 ## Operations
 
-All 9 operations are read-only reflection calls; none accepts a value that names code to
+All 13 operations are read-only reflection calls; none accepts a value that names code to
 compile or evaluate.
 
 ### `list_categories`
@@ -291,6 +291,50 @@ when there is none).
 {"ok": true, "result": [{"class": "OrderedCollection", "selector": "add:", "side": "instance"}, {"class": "Set", "selector": "add:", "side": "instance"}]}
 ```
 
+### `get_vm_version`
+
+- **Params**: `{}` (none; any params are ignored, like `list_categories`).
+- **Success result**: a JSON string, the running image's `Smalltalk vmVersion`, exactly as the VM reports it.
+- **Errors**: none beyond the generic error envelope. Read-only.
+
+```json
+{"op": "get_vm_version", "params": {}}
+{"ok": true, "result": "Open Smalltalk Cog[Spur] VM [CoInterpreterPrimitives VMMaker.oscog-eem.3738] 7.20260327.1636"}
+```
+
+### `get_platform_name`
+
+- **Params**: `{}` (none; any params are ignored).
+- **Success result**: a JSON string, `Smalltalk platformName` (e.g. `"Mac OS"`, `"unix"`).
+- **Errors**: none beyond the generic error envelope. Read-only.
+
+```json
+{"op": "get_platform_name", "params": {}}
+{"ok": true, "result": "Mac OS"}
+```
+
+### `get_platform_subtype`
+
+- **Params**: `{}` (none; any params are ignored).
+- **Success result**: a JSON string, `Smalltalk platformSubtype` (e.g. `"aarch64"`, `"x64"`).
+- **Errors**: none beyond the generic error envelope. Read-only.
+
+```json
+{"op": "get_platform_subtype", "params": {}}
+{"ok": true, "result": "aarch64"}
+```
+
+### `get_loaded_modules`
+
+- **Params**: `{}` (none; any params are ignored).
+- **Success result**: an object `{"builtin": [string], "loaded": [string]}`. `builtin` is `Smalltalk listBuiltinModules`; `loaded` is `Smalltalk listLoadedModules`. Each entry is the stamp exactly as the VM reports it (suffix such as `" (i)"` / `" (e)"` included), and the arrays are not sorted.
+- **Errors**: none beyond the generic error envelope. Read-only.
+
+```json
+{"op": "get_loaded_modules", "params": {}}
+{"ok": true, "result": {"builtin": ["B2DPlugin (i)", "FilePlugin (i)"], "loaded": ["SocketPlugin (e)"]}}
+```
+
 ## Error codes
 
 Exactly six codes, `snake_case`, spelled exactly as follows. Every error response uses the
@@ -338,7 +382,7 @@ generic error envelope (`{"ok": false, "error": {"code": ..., "message": ...}}`)
   mismatch itself before sending any further request. Always names both versions.
 - **Example**:
   ```json
-  {"ok": false, "error": {"code": "protocol_mismatch", "message": "protocol version mismatch: expected 1, got 2"}}
+  {"ok": false, "error": {"code": "protocol_mismatch", "message": "protocol version mismatch: expected 3, got 2"}}
   ```
 
 ### `session_busy`

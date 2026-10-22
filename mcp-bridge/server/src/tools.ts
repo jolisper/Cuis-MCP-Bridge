@@ -111,6 +111,28 @@ const TOOL_METADATA: ToolMeta[] = [
       required: ['selector'],
     },
   },
+  {
+    name: 'get_vm_version',
+    description:
+      'Get the Cuis VM version string (e.g. the VMMaker.oscog-eem.NNNN build stamp).',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_platform_name',
+    description: "Get the Cuis platform name, e.g. 'Mac OS'.",
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_platform_subtype',
+    description: "Get the Cuis platform subtype, e.g. 'arm64'.",
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_loaded_modules',
+    description:
+      'List the VM modules (plugins) as { builtin, loaded } arrays of module names, with their (i)/(e) suffix, as the VM reports them.',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 /** True if `err` is an `Error` carrying a `code` property, as thrown by `CuisClient`. */
