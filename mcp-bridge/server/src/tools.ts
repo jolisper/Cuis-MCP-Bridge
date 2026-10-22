@@ -1,4 +1,6 @@
 import type { CuisClient } from './cuisClient.js';
+import type { VmSourceOptions } from './vmSource/resolveCommit.js';
+import { createVmSourceTools } from './vmSource/tools.js';
 
 /** MCP `CallToolResult`-shaped outcome of invoking a tool's handler. */
 export interface ToolCallResult {
@@ -141,12 +143,17 @@ function hasErrorCode(err: unknown): err is Error & { code: string } {
 }
 
 /**
- * Builds the MCP tool definitions for the 9 read-only reflection operations, each
- * wired to `client` via a shared handler that forwards `args` as `sendRequest`
- * params and maps any rejection to an MCP error result instead of throwing.
+ * Builds the MCP tool definitions: the 13 Cuis-forwarded tools, each wired to
+ * `client` via a shared handler that forwards `args` as `sendRequest` params and
+ * maps any rejection to an MCP error result instead of throwing, followed by the
+ * host-side VM-source tools. `vmSource` overrides the VM-source options (tests use a
+ * temp home).
  */
-export function createTools(client: CuisClient): ToolDefinition[] {
-  return TOOL_METADATA.map((meta) => ({
+export function createTools(
+  client: CuisClient,
+  vmSource: Partial<VmSourceOptions> = {},
+): ToolDefinition[] {
+  const forwarded = TOOL_METADATA.map((meta) => ({
     ...meta,
     handler: async (args: Record<string, unknown>): Promise<ToolCallResult> => {
       try {
@@ -164,4 +171,5 @@ export function createTools(client: CuisClient): ToolDefinition[] {
       }
     },
   }));
+  return [...forwarded, ...createVmSourceTools(vmSource)];
 }

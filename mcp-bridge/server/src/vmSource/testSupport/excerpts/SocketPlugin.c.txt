@@ -1,0 +1,49 @@
+// excerpt: src/plugins/SocketPlugin/SocketPlugin.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 206-206
+static const char *moduleName = "SocketPlugin VMMaker.oscog-eem.3743 " INT_EXT;
+// excerpt: src/plugins/SocketPlugin/SocketPlugin.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 118-123
+static sqInt (*classArray)(void);
+static sqInt (*classByteArray)(void);
+static sqInt (*classString)(void);
+static sqInt (*disownVM)(sqInt flags);
+static sqInt (*failed)(void);
+static sqInt (*falseObject)(void);
+// excerpt: src/plugins/SocketPlugin/SocketPlugin.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 1790-1817
+	/* SocketPlugin>>#primitiveSocketReceiveDataAvailable: */
+EXPORT(sqInt)
+primitiveSocketReceiveDataAvailable(void)
+{
+	SocketPtr s;
+	sqInt socket;
+	sqInt _return_value;
+
+	socket = stackValue(0);
+
+	/* begin socketValueOf: */
+	if ((isBytes(socket))
+	 && ((byteSizeOf(socket)) == (sizeof(SQSocket)))) {
+		s = ((SocketPtr) (firstIndexableField(socket)));
+	}
+	else {
+		primitiveFailFor(PrimErrBadArgument);
+		s = ((SocketPtr) null);
+	}
+	if (!(failed())) {
+		_return_value = sqSocketReceiveDataAvailable(s);
+		if (!(failed())) {
+			methodReturnBool(_return_value);
+		}
+		return null;
+	}
+	return 0;
+}
+// excerpt: src/plugins/SocketPlugin/SocketPlugin.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 2393-2398
+static char _m[] = "SocketPlugin";
+void* SocketPlugin_exports[][3] = {
+	{(void*)_m, "getModuleName", (void*)getModuleName},
+	{(void*)_m, "initialiseModule", (void*)initialiseModule},
+	{(void*)_m, "moduleUnloaded", (void*)moduleUnloaded},
+	{(void*)_m, "primitiveDisableSocketAccess\000\377\000", (void*)primitiveDisableSocketAccess},
+// excerpt: src/plugins/SocketPlugin/SocketPlugin.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 2461-2463
+	{(void*)_m, "shutdownModule", (void*)shutdownModule},
+	{NULL, NULL, NULL}
+};

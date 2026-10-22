@@ -1,0 +1,8 @@
+// excerpt: src/plugins/FT2Plugin/FT2Plugin.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 196-202
+static const char *moduleName =
+#ifdef SQUEAK_BUILTIN_PLUGIN
+	"FT2Plugin Freetype-Plugin-EstebanLorenzano.70 (i)"
+#else
+	"FT2Plugin Freetype-Plugin-EstebanLorenzano.70 (e)"
+#endif
+;

@@ -1,0 +1,4 @@
+// excerpt: src/plugins/UnixOSProcessPlugin/UnixOSProcessPlugin.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 4523-4523
+	(sigHandlerAction.sa_handler = ((void (*)(int)) signalHandlerAddress));
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 48594-48594
+	case (firstLongFormat()) + 1:

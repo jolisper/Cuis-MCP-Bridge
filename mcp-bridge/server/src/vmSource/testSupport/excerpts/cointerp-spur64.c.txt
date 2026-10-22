@@ -1,0 +1,48 @@
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 2737-2737
+const char *interpreterVersion = "Open Smalltalk Cog[Spur] VM [CoInterpreterPrimitives VMMaker.oscog-eem.3794]";
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 2062-2064
+static void (*primitiveTable[MaxPrimitiveIndex + 2 /* 585 */])(void) = {
+	/* 0 */ (void (*)(void))0,
+	/* 1 */ primitiveAdd,
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 2180-2180
+	/* 117 */ primitiveExternalCall,
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 2318-2320
+	/* 255 */ (void (*)(void))0,
+	/* 256 */ (void (*)(void))256,
+	/* 257 */ (void (*)(void))257,
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 2647-2647
+ 0 };
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 25864-25886
+	/* InterpreterPrimitives>>#primitiveAdd */
+static void
+primitiveAdd(void)
+{   DECL_MAYBE_SQ_GLOBAL_STRUCT
+    sqInt integerResult;
+
+	integerResult = (stackIntegerValue(1)) + (stackIntegerValue(0));
+
+	/* begin pop2AndPushIntegerIfOK: */
+	if (!GIV(primFailCode)) {
+		if ((((((usqInt)(integerResult)) >> 60) + 1) & 15) <= 1) {
+			/* begin pop:thenPush: */
+			longAtput((GIV(stackPointer) += 1 * BytesPerWord),(((usqInt)integerResult << 3) | 1));
+		}
+		else {
+			/* begin success: */
+			/* Don't overwrite an error code that has already been set. */
+			if (!GIV(primFailCode)) {
+				GIV(primFailCode) = 1;
+			}
+		}
+	}
+}
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 84251-84256
+static char _m[] = "";
+void* vm_exports[][3] = {
+	{(void*)_m, "moduleUnloaded", (void*)moduleUnloaded},
+	{(void*)_m, "primitiveAddLargeIntegers\000\000\001", (void*)primitiveAddLargeIntegers},
+	{(void*)_m, "primitiveAllInstances\000\000\000", (void*)primitiveAllInstances},
+	{(void*)_m, "primitiveAllObjects\000\377\000", (void*)primitiveAllObjects},
+// excerpt: src/spur64.cog/cointerp.c @ 3ea6bd17fabb5aca6fcbd175185d2fccdd50d919 lines 84340-84341
+	{NULL, NULL, NULL}
+};

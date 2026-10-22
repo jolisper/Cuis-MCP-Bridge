@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createTools } from './tools.js';
 import type { CuisClient } from './cuisClient.js';
+import { coreInterp, plugin } from './vmSource/testSupport/fixtures.js';
+import { createHarness, type Harness } from './vmSource/testSupport/harness.js';
 
 describe('createTools', () => {
   it('returns a list_categories tool whose handler resolves with the categories as MCP text content', async () => {
@@ -170,6 +172,146 @@ describe('createTools', () => {
     expect(result).toEqual({
       content: [{ type: 'text', text: 'not_found: Class Foo not found' }],
       isError: true,
+    });
+  });
+
+  it('returns an MCP error result starting with protocol_mismatch: when get_vm_version rejects with a protocol_mismatch error', async () => {
+    // Given a fake CuisClient whose sendRequest rejects with a structured protocol_mismatch error
+    const fakeClient = {
+      sendRequest: async () => {
+        const error = new Error('bridge protocol version differs') as Error & { code: string };
+        error.code = 'protocol_mismatch';
+        throw error;
+      },
+    } as unknown as CuisClient;
+
+    // When creating the tools and invoking the get_vm_version tool's handler with {}
+    const tools = createTools(fakeClient);
+    const getVmVersionTool = tools.find((tool) => tool.name === 'get_vm_version');
+    const result = await getVmVersionTool!.handler({});
+
+    // Then it returns an MCP error result whose text starts with the code
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text.startsWith('protocol_mismatch:')).toBe(true);
+  });
+
+  it('returns an MCP error result starting with unreachable: when get_vm_version rejects with an unreachable error', async () => {
+    // Given a fake CuisClient whose sendRequest rejects with a structured unreachable error
+    const fakeClient = {
+      sendRequest: async () => {
+        const error = new Error('cannot reach Cuis image') as Error & { code: string };
+        error.code = 'unreachable';
+        throw error;
+      },
+    } as unknown as CuisClient;
+
+    // When creating the tools and invoking the get_vm_version tool's handler with {}
+    const tools = createTools(fakeClient);
+    const getVmVersionTool = tools.find((tool) => tool.name === 'get_vm_version');
+    const result = await getVmVersionTool!.handler({});
+
+    // Then it returns an MCP error result whose text starts with the code
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text.startsWith('unreachable:')).toBe(true);
+  });
+
+  describe('with vm source options', () => {
+    let h: Harness;
+
+    afterEach(async () => {
+      await h?.cleanup();
+    });
+
+    it('appends setup_vm_mirror after the forwarded tools and it starts without touching the Cuis connection', async () => {
+      // Given a gated harness and a fake CuisClient that records calls and is unreachable
+      h = await createHarness({ gated: true });
+      const calls: Array<[string, unknown]> = [];
+      const fakeClient = {
+        sendRequest: async (method: string, args: unknown) => {
+          calls.push([method, args]);
+          const error = new Error('cannot reach Cuis image') as Error & { code: string };
+          error.code = 'unreachable';
+          throw error;
+        },
+      } as unknown as CuisClient;
+
+      // When creating the tools with vm source options and invoking setup_vm_mirror with {}
+      const tools = createTools(fakeClient, { home: h.home, upstreamUrl: h.upstreamUrl, git: h.git });
+      const names = tools.map((t) => t.name);
+      const setupTool = tools.find((tool) => tool.name === 'setup_vm_mirror');
+      const result = await setupTool?.handler({});
+
+      // Then the tool list ends with setup_vm_mirror then get_vm_source, it reports started, and the Cuis connection was never used
+      expect(names).toEqual([
+        'list_categories',
+        'list_classes',
+        'list_protocols',
+        'list_methods',
+        'get_method_source',
+        'get_class_definition',
+        'get_class_comment',
+        'list_senders_of',
+        'list_implementors_of',
+        'get_vm_version',
+        'get_platform_name',
+        'get_platform_subtype',
+        'get_loaded_modules',
+        'setup_vm_mirror',
+        'get_vm_source',
+      ]);
+      expect(result).toEqual({ content: [{ type: 'text', text: '{"status":"started"}' }] });
+      expect(calls).toEqual([]);
+    });
+
+    it('get_vm_source succeeds as the first and only call while the Cuis connection is unreachable, never touching it', async () => {
+      // Given a fake CuisClient whose sendRequest rejects with an unreachable error
+      const fakeClient = {
+        sendRequest: vi.fn(async () => {
+          const error = new Error('cannot reach Cuis image') as Error & { code: string };
+          error.code = 'unreachable';
+          throw error;
+        }),
+      };
+      // And a mirror with one commit holding cointerp.c 3794 and a SocketPlugin exporting the primitive
+      h = await createHarness();
+      await h.pushUpstream(
+        {
+          'src/spur64.cog/cointerp.c': coreInterp({ version: '3794' }),
+          'src/plugins/SocketPlugin/SocketPlugin.c': plugin({
+            module: 'SocketPlugin',
+            functions: [
+              {
+                name: 'primitiveSocketReceiveDataAvailable',
+                generatedFrom: 'SocketPlugin>>#primitiveSocketReceiveDataAvailable:',
+                body: ['\tsqInt dataIsAvailable;', '', '\treturn interpreterProxy->methodReturnBool(dataIsAvailable);'],
+              },
+            ],
+            exports: [{ name: 'primitiveSocketReceiveDataAvailable' }],
+          }),
+        },
+        'VMMaker.oscog-eem.3794',
+      );
+      await h.cloneMirror();
+      const tools = createTools(fakeClient as unknown as CuisClient, {
+        home: h.home,
+        upstreamUrl: h.upstreamUrl,
+        git: h.git,
+      });
+
+      // When the first and only call is get_vm_source with the SocketPlugin args
+      const result = await tools.find((tool) => tool.name === 'get_vm_source')!.handler({
+        vmVersion: 'Open Smalltalk Cog[Spur] VM [CoInterpreterPrimitives VMMaker.oscog-eem.3794] 7.20260327.1636',
+        lookupKey: 'primitiveSocketReceiveDataAvailable',
+        module: 'SocketPlugin',
+      });
+
+      // Then it returns the SocketPlugin source without ever using the Cuis connection
+      expect(result.isError).toBeFalsy();
+      const text = result.content[0].text;
+      expect(JSON.parse(text).metadata.path).toBe('src/plugins/SocketPlugin/SocketPlugin.c');
+      expect(fakeClient.sendRequest).not.toHaveBeenCalled();
+      expect(text).not.toContain('session_busy');
+      expect(text).not.toContain('unreachable');
     });
   });
 });
