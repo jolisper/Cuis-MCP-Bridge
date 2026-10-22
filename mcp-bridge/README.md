@@ -112,7 +112,7 @@ the file.
    Claude Code session. `cuis-mcp-bridge` should show as connected. If it shows as failed,
    double-check the path in the config is absolute and that `npm run build` actually produced
    `dist/index.js` (step 1).
-3. The 9 tools listed below (`list_categories`, `list_classes`, etc.) should now be available
+3. The 15 tools listed below (`list_categories`, `list_classes`, etc.) should now be available
    to Claude Code for use in conversation.
 
 Check Claude Code's own MCP documentation if this registration format has changed since
@@ -149,10 +149,48 @@ whole bridge failing to start.
   then side then selector.
 - `list_implementors_of` — List methods that implement a given selector, sorted by class then
   side then selector.
+- `get_vm_version` — Get the Cuis VM version string (e.g. a `VMMaker.oscog-eem.NNNN` build
+  stamp).
+- `get_platform_name` — Get the platform name (e.g. `'Mac OS'`).
+- `get_platform_subtype` — Get the platform subtype (e.g. `'arm64'`).
+- `get_loaded_modules` — List the VM modules as `{ builtin, loaded }` arrays of names, each
+  with its `(i)`/`(e)` suffix, as the VM reports them.
+- `setup_vm_mirror` — Host-side, no Cuis image needed. Start (or check on) a local bare mirror
+  of the OpenSmalltalk VM source. Takes no parameters and returns immediately with
+  `{ "status": "ready" | "in_progress" | "started" }`; `started` means a background
+  `git clone --bare` (~750 MB, ~1.5 min) has just begun.
+- `get_vm_source` — Host-side, no Cuis connection. Return the C source of one VM primitive as
+  JSON `{ function, generatedFrom, helpers, externalCalls, metadata, caveats }`, read only from
+  the mirror at the exact upstream commit the running VM was built from (resolved from the
+  `VMMaker.oscog-eem.NNNN` token in `vmVersion`). Takes `vmVersion` and `lookupKey`
+  (required), plus `module`, `platformName`, `platformSubtype`, `moduleStamps`; pass each one
+  verbatim as the Cuis-side tools returned it (`lookupKey` straight off the pragma: a number
+  for numbered primitives, the name string for named ones). `caveats` lists every default the
+  tool applied. Requires the mirror: `mirror_missing` means run `setup_vm_mirror` and retry. A
+  call whose commit isn't in the mirror yet fetches it first and can take noticeably longer.
+  When the plugin's stamp in `moduleStamps` differs from the one at that commit, the tool looks
+  for the commit carrying the running stamp.
+
+`setup_vm_mirror` requires `git` on PATH (`git_unavailable` otherwise). Its only writes are
+under `~/.cuis-mcp-bridge/` (`vm-mirror/`, `vm-mirror.lock`, `vm-mirror.error`, and a transient
+`vm-mirror.tmp-<pid>/`); the mirror is shared by every bridge instance on the machine and never
+touches a project-local `opensmalltalk-vm/`. `vm-mirror.error` records the failure of the last
+background clone: the next `setup_vm_mirror` call reports it (as `fetch_failed` or
+`mirror_write_failed`, with git's text) and consumes it, and the call after that retries.
+
+Typical `get_vm_source` call order: `get_method_source` (read the pragma) → `get_vm_version` →
+`get_platform_name` / `get_platform_subtype` as required → optionally `get_loaded_modules` →
+`get_vm_source`. Which platform parameters it requires depends on `module`:
+
+| `module` | `platformSubtype` | `platformName` |
+|---|---|---|
+| ordinary plugin | not required | not required |
+| `SqueakFFIPrims` | required | required |
+| omitted | required | optional (without it, the plain `cointerp.c` rendering is returned) |
 
 ## Troubleshooting
 
-Tool calls can fail with one of six structured error codes:
+Cuis-side tool calls can fail with one of six structured error codes:
 
 - `not_found` — the category, class, protocol, selector, or side you named doesn't exist in
   the image. Check spelling/casing.
@@ -168,3 +206,40 @@ Tool calls can fail with one of six structured error codes:
   restart the Cuis-side server.
 - `unreachable` — the bridge couldn't reach the Cuis-side server at all. Start the Cuis-side
   server first (`McpBridgeServer startOn: 6789.`), and confirm nothing else is using port 6789.
+
+The host-side VM source tools (`setup_vm_mirror`, `get_vm_source`) don't talk to Cuis and use
+their own codes instead, reported as `"<code>: <message>"`:
+
+- `invalid_request` — a `get_vm_source` parameter has the wrong type. Also `module` given
+  with a numeric `lookupKey`, or `moduleStamps` not an object with `builtin` and `loaded`
+  string arrays.
+- `mirror_missing` — there is no VM source mirror yet. Call `setup_vm_mirror`, then retry.
+- `mirror_initializing` — the mirror is still being cloned. Retry once it's `ready`.
+- `mirror_busy` — another bridge instance (another session) is fetching into the mirror. Try
+  again once it has finished. Calls within one bridge instance share a fetch instead of
+  failing. If it persists with no other session running, a killed git may have left
+  `~/.cuis-mcp-bridge/vm-mirror/refs/heads/Cog.lock` behind; delete it.
+- `symbol_not_found` — the primitive isn't in the source at the resolved commit (no exports
+  row, `primitiveTable` slot, or definition). Note that a string `lookupKey` such as `"1"` is
+  always looked up as a name.
+- `version_unparseable` — `vmVersion` has no `VMMaker.oscog-<initials>.<N>` token. Pass the
+  string `get_vm_version` returned, verbatim.
+- `missing_platform_info` — a platform parameter the case needs is missing; the error names it
+  (see the table above).
+- `unsupported_platform` — Win32 (whenever supplied), a `platformName`/`platformSubtype` the
+  case uses that has no mapping, or, with no `module`, a Stack or other unmapped VM family.
+- `git_unavailable` — no usable `git`. Install it and retry.
+- `fetch_failed` — the upstream repository couldn't be reached; the message carries git's text.
+  Retry when online.
+- `mirror_write_failed` — any other clone or fetch failure, e.g. a full disk or an unwritable
+  `~/.cuis-mcp-bridge`. Fix the cause and retry.
+- `commit_not_found` — no commit carries the `VMMaker.oscog` token, even after a fetch.
+- `mirror_corrupt` — the mirror can't be read as a git repository. Delete
+  `~/.cuis-mcp-bridge/vm-mirror` and call `setup_vm_mirror` again; the tools never repair or
+  delete it themselves.
+- `internal_error` — git couldn't be run to completion (resource exhaustion, killed, output too
+  large). May be transient; retry. Do not delete the mirror.
+- `module_not_found` — `module` isn't a plugin at that commit.
+- `path_not_found` — the commit lacks the expected file, e.g. an older repository layout.
+- `primitive_slot_empty` — the numbered slot holds no function; the method always runs its
+  Smalltalk fallback.

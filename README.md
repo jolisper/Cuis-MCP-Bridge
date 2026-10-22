@@ -5,7 +5,9 @@ Two related efforts living in one repo, both centered on [Cuis Smalltalk](https:
 - **`mcp-bridge/`** — an MCP server that exposes read-only reflection into a running Cuis
   image (categories, classes, protocols, methods, source, comments) as tools Claude Code can
   call, so an AI assistant can browse a live image the way a developer would through the
-  System Browser.
+  System Browser. It also has host-side tools, no image needed, that mirror the OpenSmalltalk
+  VM source locally (`setup_vm_mirror`) and return a primitive's C source from the exact commit
+  the running VM was built from (`get_vm_source`).
 - **`vm-exploration/`** — a hands-on sandbox for exploring the boundary between the
   OpenSmalltalk VM and the Smalltalk image: writing external VM primitives from scratch (in C
   and in Zig) and wiring them up to a running image.

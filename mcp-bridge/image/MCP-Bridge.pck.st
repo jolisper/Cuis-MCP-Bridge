@@ -41,7 +41,7 @@ My class-side `pollLoop` process periodically checks the active connection's ina
 Send `verbose: true` (before or after `startOn:`) to have connection/request activity — accepted and rejected connections, inactivity-driven cleanup, and each request's op and params — logged via `Transcript log:`. Off by default. Millisecond-precision timestamps and the logging Process' identity only appear on each entry if `Transcript logToFile:`/`logToStdout:` is also enabled (see `Transcript` class comment); without those, entries still show live in the Transcript window, just untimestamped.!
 
 !McpBridgeConnection commentStamp: 'jlp 3/Sep/2026 23:55:00' prior: 0!
-I own the request loop for one accepted socket. I read each request line, decode it with `Json`, and dispatch it by its `op` name to a handler method: `handshake`, plus reflection operations (`list_categories`, `list_classes`, `list_protocols`, `list_methods`, `get_method_source`, `get_class_definition`, `get_class_comment`) that query the running image's class/method organization. Each handler replies with a success or error envelope. I run my request loop in my own forked `Process`.!
+I own the request loop for one accepted socket. I read each request line, decode it with `Json`, and dispatch it by its `op` name to a handler method: `handshake`, VM/platform operations (`get_vm_version`, `get_platform_name`, `get_platform_subtype`, `get_loaded_modules`), plus reflection operations (`list_categories`, `list_classes`, `list_protocols`, `list_methods`, `get_method_source`, `get_class_definition`, `get_class_comment`, `list_implementors_of`, `list_senders_of`) that query the running image's class/method organization. Each handler replies with a success or error envelope. I run my request loop in my own forked `Process`.!
 
 !McpBridgeConnection class methodsFor: 'instance creation' stamp: 'jlp 3/Sep/2026 20:55:58'!
 on: aSocket
@@ -49,7 +49,7 @@ on: aSocket
 
 !McpBridgeConnection class methodsFor: 'accessing' stamp: 'jlp 3/Sep/2026 20:55:58'!
 protocolVersion
-	^ 2! !
+	^ 3! !
 
 !McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
 setSocket: aSocket
@@ -98,6 +98,10 @@ requestLoop
 operationHandlers
 	^ Dictionary new
 		at: 'handshake' put: #handleHandshake:;
+		at: 'get_vm_version' put: #handleGetVmVersion:;
+		at: 'get_platform_name' put: #handleGetPlatformName:;
+		at: 'get_platform_subtype' put: #handleGetPlatformSubtype:;
+		at: 'get_loaded_modules' put: #handleGetLoadedModules:;
 		at: 'list_categories' put: #handleListCategories:;
 		at: 'list_classes' put: #handleListClasses:;
 		at: 'list_protocols' put: #handleListProtocols:;
@@ -127,6 +131,25 @@ handleHandshake: request
 		ifFalse: [
 			self sendError: 'protocol_mismatch' message: 'protocol version mismatch: expected ', self class protocolVersion printString, ', got ', receivedVersion printString.
 			socket destroy]! !
+
+!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+handleGetVmVersion: request
+	self sendSuccess: Smalltalk vmVersion! !
+
+!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+handleGetPlatformName: request
+	self sendSuccess: Smalltalk platformName! !
+
+!McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
+handleGetPlatformSubtype: request
+	self sendSuccess: Smalltalk platformSubtype! !
+
+!McpBridgeConnection methodsFor: 'private' stamp: 'claude 19/Sep/2026 20:00:00'!
+handleGetLoadedModules: request
+	self sendSuccess: (OrderedDictionary new
+		at: 'builtin' put: (Smalltalk listBuiltinModules collect: [:each | each asString]) asArray;
+		at: 'loaded' put: (Smalltalk listLoadedModules collect: [:each | each asString]) asArray;
+		yourself)! !
 
 !McpBridgeConnection methodsFor: 'private' stamp: 'jlp 3/Sep/2026 20:55:58'!
 handleListCategories: request

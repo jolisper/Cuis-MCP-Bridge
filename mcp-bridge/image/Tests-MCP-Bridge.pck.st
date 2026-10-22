@@ -64,6 +64,17 @@ testStartOnMakesServerReachableViaTcp
 	"Then the connection succeeds"
 	self assert: clientSocket isConnected! !
 
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 5/Sep/2026 09:00:00'!
+testProtocolVersionIsThree
+	"Given the McpBridgeConnection class"
+	| version |
+
+	"When asking for its protocol version"
+	version := McpBridgeConnection protocolVersion.
+
+	"Then it is 3, so an older package fails the handshake with protocol_mismatch"
+	self assert: version = 3! !
+
 !McpBridgeTests methodsFor: 'tests' stamp: 'jlp 3/Sep/2026 20:55:58'!
 testStartOnBindsOnlyToLoopback
 	"Given a McpBridgeServer started on a test port"
@@ -144,11 +155,11 @@ testHandshakeRequestGetsSuccessResponse
 	self assert: clientSocket isConnected.
 
 	"When the client sends the handshake request line"
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 
 	"Then the client receives the handshake success response line"
 	response := clientSocket receiveDataTimeout: 2.
-	expectedJson := '{"ok": true, "result": {"protocol_version": 2}}', String lfString.
+	expectedJson := '{"ok": true, "result": {"protocol_version": 3}}', String lfString.
 	self assert: response equals: expectedJson! !
 
 !McpBridgeTests methodsFor: 'tests' stamp: 'jlp 3/Sep/2026 20:55:58'!
@@ -164,11 +175,11 @@ testHandshakeRequestWithMismatchedVersionGetsProtocolMismatchError
 	self assert: clientSocket isConnected.
 
 	"When the client sends a handshake request line with a protocol_version that does not match the server's own"
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
 
 	"Then the client receives a protocol_mismatch error response line naming both versions"
 	response := clientSocket receiveDataTimeout: 2.
-	expectedJson := '{"ok": false, "error": {"code": "protocol_mismatch", "message": "protocol version mismatch: expected 2, got 3"}}', String lfString.
+	expectedJson := '{"ok": false, "error": {"code": "protocol_mismatch", "message": "protocol version mismatch: expected 3, got 2"}}', String lfString.
 	self assert: response equals: expectedJson! !
 
 !McpBridgeTests methodsFor: 'tests' stamp: 'jlp 3/Sep/2026 20:55:58'!
@@ -182,9 +193,9 @@ testMalformedJsonAfterHandshakeGetsInvalidRequestError
 		port: 17896.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	expectedJson := '{"ok": true, "result": {"protocol_version": 2}}', String lfString.
+	expectedJson := '{"ok": true, "result": {"protocol_version": 3}}', String lfString.
 	self assert: response equals: expectedJson.
 
 	"When the client then sends a line of malformed JSON"
@@ -226,9 +237,9 @@ testUnrecognizedOpAfterHandshakeGetsInvalidRequestError
 		port: 17897.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	expectedJson := '{"ok": true, "result": {"protocol_version": 2}}', String lfString.
+	expectedJson := '{"ok": true, "result": {"protocol_version": 3}}', String lfString.
 	self assert: response equals: expectedJson.
 
 	"When the client then sends a well-formed request naming an unrecognized operation"
@@ -250,9 +261,9 @@ testListCategoriesRequestGetsSortedCategoryList
 		port: 17899.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_categories request"
 	clientSocket sendData: '{"op": "list_categories", "params": {}}', String lfString.
@@ -267,6 +278,178 @@ testListCategoriesRequestGetsSortedCategoryList
 	self assert: result asSortedCollection asArray equals: result asArray! !
 
 !McpBridgeTests methodsFor: 'tests' stamp: 'jlp 3/Sep/2026 20:55:58'!
+testGetVmVersionRequestGetsVmVersionString
+	"Given a McpBridgeServer started on a test port with a client connected to it that has already completed a successful handshake"
+	| response decoded result |
+	McpBridgeServer startOn: 17930.
+	clientSocket := Socket newTCP.
+	clientSocket
+		connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+		port: 17930.
+	clientSocket waitForConnectionFor: 2.
+	self assert: clientSocket isConnected.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
+
+	"When the client then sends a get_vm_version request"
+	clientSocket sendData: '{"op": "get_vm_version", "params": {}}', String lfString.
+
+	"Then the client receives a success response whose result is the VM version string"
+	response := clientSocket receiveDataTimeout: 2.
+	decoded := Json readFrom: (ReadStream on: response).
+	self assert: (decoded at: 'ok') equals: true.
+	result := decoded at: 'result'.
+	self assert: result isString.
+	self assert: result equals: Smalltalk vmVersion.
+	self assert: (result includesSubString: 'VMMaker.oscog-eem.')! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 3/Sep/2026 21:00:00'!
+testGetPlatformNameRequestGetsPlatformNameString
+	"Given a McpBridgeServer started on a test port with a client connected to it that has already completed a successful handshake"
+	| response decoded result |
+	McpBridgeServer startOn: 17931.
+	clientSocket := Socket newTCP.
+	clientSocket
+		connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+		port: 17931.
+	clientSocket waitForConnectionFor: 2.
+	self assert: clientSocket isConnected.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
+
+	"When the client then sends a get_platform_name request"
+	clientSocket sendData: '{"op": "get_platform_name", "params": {}}', String lfString.
+
+	"Then the client receives a success response whose result is the platform name string"
+	response := clientSocket receiveDataTimeout: 2.
+	decoded := Json readFrom: (ReadStream on: response).
+	self assert: (decoded at: 'ok') equals: true.
+	result := decoded at: 'result'.
+	self assert: result isString.
+	self assert: result equals: Smalltalk platformName! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 18/Oct/2026 12:00:00'!
+testGetPlatformSubtypeRequestGetsPlatformSubtypeString
+	"Given a McpBridgeServer started on a test port with a client connected to it that has already completed a successful handshake"
+	| response decoded result |
+	McpBridgeServer startOn: 17932.
+	clientSocket := Socket newTCP.
+	clientSocket
+		connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+		port: 17932.
+	clientSocket waitForConnectionFor: 2.
+	self assert: clientSocket isConnected.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
+
+	"When the client then sends a get_platform_subtype request"
+	clientSocket sendData: '{"op": "get_platform_subtype", "params": {}}', String lfString.
+
+	"Then the client receives a success response whose result is the platform subtype string"
+	response := clientSocket receiveDataTimeout: 2.
+	decoded := Json readFrom: (ReadStream on: response).
+	self assert: (decoded at: 'ok') equals: true.
+	result := decoded at: 'result'.
+	self assert: result isString.
+	self assert: result equals: Smalltalk platformSubtype! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 18/Oct/2026 10:00:00'!
+testGetLoadedModulesRequestGetsBuiltinAndLoadedArrays
+	"Given a McpBridgeServer started on a test port with a client connected to it that has already completed a successful handshake"
+	| response decoded result builtin loaded |
+	McpBridgeServer startOn: 17933.
+	clientSocket := Socket newTCP.
+	clientSocket
+		connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+		port: 17933.
+	clientSocket waitForConnectionFor: 2.
+	self assert: clientSocket isConnected.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
+
+	"When the client then sends a get_loaded_modules request"
+	clientSocket sendData: '{"op": "get_loaded_modules", "params": {}}', String lfString.
+
+	"Then the client receives a success response whose result has builtin and loaded arrays of strings, in VM order"
+	response := clientSocket receiveDataTimeout: 2.
+	decoded := Json readFrom: (ReadStream on: response).
+	self assert: (decoded at: 'ok') equals: true.
+	result := decoded at: 'result'.
+	self assert: result keys asSortedCollection asArray equals: #('builtin' 'loaded').
+	builtin := (result at: 'builtin') asArray.
+	loaded := (result at: 'loaded') asArray.
+	self assert: (builtin allSatisfy: [:each | each isString]).
+	self assert: (loaded allSatisfy: [:each | each isString]).
+	self assert: builtin equals: (Smalltalk listBuiltinModules collect: [:each | each asString]) asArray.
+	self assert: loaded equals: (Smalltalk listLoadedModules collect: [:each | each asString]) asArray.
+	self assert: builtin notEmpty.
+	self assert: (builtin anySatisfy: [:each | each last = $)])! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 18/Oct/2026 13:00:00'!
+testNewOpsShareSessionWithExistingOnes
+	"Given a McpBridgeServer started on a test port with connection A already handshaken at protocol_version 3"
+	| secondSocket response decoded |
+	McpBridgeServer startOn: 17934.
+	clientSocket := Socket newTCP.
+	clientSocket
+		connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+		port: 17934.
+	clientSocket waitForConnectionFor: 2.
+	self assert: clientSocket isConnected.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
+	secondSocket := Socket newTCP.
+	[
+		"When a second connection B connects while A is active"
+		secondSocket
+			connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+			port: 17934.
+		secondSocket waitForConnectionFor: 2.
+		response := secondSocket receiveDataTimeout: 2.
+
+		"Then B receives session_busy, and A's get_vm_version request still answers the VM version string"
+		self assert: response equals: ('{"ok": false, "error": {"code": "session_busy", "message": "a session is already active; only one connection is allowed at a time"}}', String lfString).
+		clientSocket sendData: '{"op": "get_vm_version", "params": {}}', String lfString.
+		response := clientSocket receiveDataTimeout: 2.
+		decoded := Json readFrom: (ReadStream on: response).
+		self assert: (decoded at: 'ok') equals: true.
+		self assert: (decoded at: 'result') equals: Smalltalk vmVersion.
+	] ensure: [ secondSocket destroy ]! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 18/Oct/2026 14:00:00'!
+testFourVmFactOpsLeaveImageStateUnchanged
+	"Given a McpBridgeServer started on a test port with a handshaken client, and snapshots of the loaded modules and system categories"
+	| response decoded modulesBefore categoryCountBefore |
+	modulesBefore := Smalltalk listLoadedModules asArray copy.
+	categoryCountBefore := SystemOrganization categories size.
+	McpBridgeServer startOn: 17935.
+	clientSocket := Socket newTCP.
+	clientSocket
+		connectTo: (NetNameResolver addressFromString: '127.0.0.1')
+		port: 17935.
+	clientSocket waitForConnectionFor: 2.
+	self assert: clientSocket isConnected.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
+	response := clientSocket receiveDataTimeout: 2.
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
+
+	"When the client sends get_vm_version, get_platform_name, get_platform_subtype and get_loaded_modules"
+	#('get_vm_version' 'get_platform_name' 'get_platform_subtype' 'get_loaded_modules') do: [:op |
+		clientSocket sendData: '{"op": "', op, '", "params": {}}', String lfString.
+		response := clientSocket receiveDataTimeout: 2.
+		decoded := Json readFrom: (ReadStream on: response).
+		self assert: (decoded at: 'ok') equals: true].
+
+	"Then the loaded modules and the number of system categories are unchanged"
+	self assert: Smalltalk listLoadedModules asArray equals: modulesBefore.
+	self assert: SystemOrganization categories size equals: categoryCountBefore! !
+
+!McpBridgeTests methodsFor: 'tests' stamp: 'jlp 3/Sep/2026 20:55:58'!
 testListClassesRequestGetsSortedClassListForCategory
 	"Given a McpBridgeServer started on a test port with a client connected to it that has already completed a successful handshake"
 	| response decoded result |
@@ -277,9 +460,9 @@ testListClassesRequestGetsSortedClassListForCategory
 		port: 17900.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_classes request for an existing category"
 	clientSocket sendData: '{"op": "list_classes", "params": {"category": "MCP-Bridge"}}', String lfString.
@@ -302,9 +485,9 @@ testListClassesRequestForNonexistentCategoryGetsNotFoundError
 		port: 17901.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_classes request naming a category that does not exist in the image"
 	clientSocket sendData: '{"op": "list_classes", "params": {"category": "NotARealCategory12345"}}', String lfString.
@@ -325,9 +508,9 @@ testListProtocolsRequestGetsInstanceAndClassSideProtocolLists
 		port: 17902.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_protocols request for an existing class"
 	clientSocket sendData: '{"op": "list_protocols", "params": {"class": "McpBridgeConnection"}}', String lfString.
@@ -355,9 +538,9 @@ testListProtocolsRequestForNonexistentClassGetsNotFoundError
 		port: 17903.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_protocols request naming a class that does not exist in the image"
 	clientSocket sendData: '{"op": "list_protocols", "params": {"class": "NotARealClass12345"}}', String lfString.
@@ -378,9 +561,9 @@ testListMethodsRequestGetsSortedMethodListForClassProtocolAndSide
 		port: 17904.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_methods request for an existing class, protocol and side"
 	clientSocket sendData: '{"op": "list_methods", "params": {"class": "McpBridgeConnection", "protocol": "private", "side": "instance"}}', String lfString.
@@ -404,9 +587,9 @@ testListMethodsRequestForNonexistentClassOrInvalidSideGetsNotFoundError
 		port: 17905.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client sends a list_methods request naming a class that does not exist in the image"
 	clientSocket sendData: '{"op": "list_methods", "params": {"class": "NotARealClass12345", "protocol": "private", "side": "instance"}}', String lfString.
@@ -435,9 +618,9 @@ testListMethodsRequestForNonexistentProtocolGetsNotFoundErrorNotEmptyList
 		port: 17914.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client sends a list_methods request for an existing class and side, but a protocol name that does not exist on it"
 	clientSocket sendData: '{"op": "list_methods", "params": {"class": "McpBridgeConnection", "protocol": "NotARealProtocol12345", "side": "instance"}}', String lfString.
@@ -461,9 +644,9 @@ testGetMethodSourceRequestGetsMethodSourceText
 		port: 17906.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a get_method_source request for an existing class, selector and side"
 	clientSocket sendData: '{"op": "get_method_source", "params": {"class": "McpBridgeConnection", "selector": "setSocket:", "side": "instance"}}', String lfString.
@@ -487,9 +670,9 @@ testGetClassDefinitionRequestGetsClassDefinitionFields
 		port: 17908.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a get_class_definition request for an existing class"
 	clientSocket sendData: '{"op": "get_class_definition", "params": {"class": "McpBridgeConnection"}}', String lfString.
@@ -515,9 +698,9 @@ testGetMethodSourceRequestForInstanceOnlySelectorOnClassSideGetsNotFoundError
 		port: 17907.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client sends a get_method_source request for a selector that only exists on the instance side, but names side: class"
 	clientSocket sendData: '{"op": "get_method_source", "params": {"class": "McpBridgeConnection", "selector": "setSocket:", "side": "class"}}', String lfString.
@@ -538,9 +721,9 @@ testGetClassDefinitionRequestForNonexistentClassGetsNotFoundError
 		port: 17909.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a get_class_definition request naming a class that does not exist in the image"
 	clientSocket sendData: '{"op": "get_class_definition", "params": {"class": "NotARealClass12345"}}', String lfString.
@@ -561,9 +744,9 @@ testGetClassCommentRequestGetsClassCommentText
 		port: 17910.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a get_class_comment request for a class with a comment set"
 	clientSocket sendData: '{"op": "get_class_comment", "params": {"class": "McpBridgeServer"}}', String lfString.
@@ -586,9 +769,9 @@ testGetClassCommentRequestForNonexistentClassGetsNotFoundError
 		port: 17911.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a get_class_comment request naming a class that does not exist in the image"
 	clientSocket sendData: '{"op": "get_class_comment", "params": {"class": "NotARealClass12345"}}', String lfString.
@@ -609,9 +792,9 @@ testGetClassCommentRequestForUncommentedClassGetsNullResult
 		port: 17912.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a get_class_comment request for a class that exists but has no comment set"
 	clientSocket sendData: '{"op": "get_class_comment", "params": {"class": "McpBridgeConnectionQueue"}}', String lfString.
@@ -651,9 +834,9 @@ testActiveConnectionSurvivesPastInactivityTimeoutWhenRequestsKeepArriving
 		port: 17913.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client sends two more requests, each within the timeout window of the previous one, but whose combined elapsed time exceeds the timeout"
 	(Delay forMilliseconds: 200) wait.
@@ -692,9 +875,9 @@ testListImplementorsOfRequestGetsSortedMethodReferenceArray
 		port: 17915.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_implementors_of request for a widely-implemented selector"
 	clientSocket sendData: '{"op": "list_implementors_of", "params": {"selector": "setSocket:"}}', String lfString.
@@ -753,9 +936,9 @@ testListImplementorsOfRequestGetsFullSortedArrayAcrossMultipleReadChunks
 		port: 17916.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_implementors_of request for a selector implemented across many real classes in the image, large enough that the response exceeds a single 2000-byte socket read"
 	clientSocket sendData: '{"op": "list_implementors_of", "params": {"selector": "printOn:"}}', String lfString.
@@ -786,9 +969,9 @@ testListSendersOfRequestGetsMethodReferenceArrayNamingTheSender
 		port: 17917.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_senders_of request for a selector known to be referenced by another method's body"
 	clientSocket sendData: '{"op": "list_senders_of", "params": {"selector": "setSocket:"}}', String lfString.
@@ -814,9 +997,9 @@ testListImplementorsOfRequestForUnknownSelectorGetsEmptyArray
 		port: 17918.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_implementors_of request for a selector that does not exist anywhere in the image"
 	clientSocket sendData: '{"op": "list_implementors_of", "params": {"selector": "thisSelectorDoesNotExistAnywhereInThisImage12345"}}', String lfString.
@@ -838,9 +1021,9 @@ testListSendersOfRequestForUnknownSelectorGetsEmptyArray
 		port: 17919.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_senders_of request for a selector that does not exist anywhere in the image"
 	clientSocket sendData: '{"op": "list_senders_of", "params": {"selector": "thisSelectorDoesNotExistAnywhereInThisImage12345"}}', String lfString.
@@ -862,9 +1045,9 @@ testListImplementorsOfRequestWithMissingSelectorGetsInvalidRequestError
 		port: 17920.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_implementors_of request with no selector param at all"
 	clientSocket sendData: '{"op": "list_implementors_of", "params": {}}', String lfString.
@@ -886,9 +1069,9 @@ testListSendersOfRequestWithMissingSelectorGetsInvalidRequestError
 		port: 17921.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_senders_of request with no selector param at all"
 	clientSocket sendData: '{"op": "list_senders_of", "params": {}}', String lfString.
@@ -910,9 +1093,9 @@ testListImplementorsOfResultRowChainsDirectlyIntoGetMethodSource
 		port: 17922.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client sends a list_implementors_of request, decodes the single-entry result, and then sends a second get_method_source request built literally from that row's class/selector/side values, not hardcoded literals"
 	clientSocket sendData: '{"op": "list_implementors_of", "params": {"selector": "setSocket:"}}', String lfString.
@@ -942,9 +1125,9 @@ testListSendersOfRequestMatchesLiteralReferenceNotJustSends
 		port: 17923.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_senders_of request for a selector that appears only as a bare literal inside a nested literal array, never as an actual message send"
 	clientSocket sendData: '{"op": "list_senders_of", "params": {"selector": "zzzFixtureSelectorNeverSentNorImplemented"}}', String lfString.
@@ -970,9 +1153,9 @@ testListImplementorsOfSelectorMatchingIsCaseSensitive
 		port: 17924.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_implementors_of request for a wrong-case version of the real, known-implemented selector setSocket: (capital S instead of lowercase)"
 	clientSocket sendData: '{"op": "list_implementors_of", "params": {"selector": "SetSocket:"}}', String lfString.
@@ -994,9 +1177,9 @@ testListImplementorsOfRequestReportsSameSelectorOnBothSidesAsTwoRows
 		port: 17925.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_implementors_of request for a selector implemented under the identical name on both the instance side and the class side of McpBridgeTests"
 	clientSocket sendData: '{"op": "list_implementors_of", "params": {"selector": "zzzFixtureSelectorOnBothSides"}}', String lfString.
@@ -1027,9 +1210,9 @@ testGetMethodSourceForStaleImplementorsRowGetsOrdinaryNotFoundError
 		port: 17926.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client sends a list_implementors_of request, decodes the single real row, then builds a get_method_source request using that row's real class and side but a substituted, deliberately nonexistent selector -- simulating a row that has gone stale since it was listed, because the method it once named has since been removed"
 	clientSocket sendData: '{"op": "list_implementors_of", "params": {"selector": "setSocket:"}}', String lfString.
@@ -1073,9 +1256,9 @@ testListSendersOfRequestSortsBySelectorWithinSameClassAndSide
 		port: 17927.
 	clientSocket waitForConnectionFor: 2.
 	self assert: clientSocket isConnected.
-	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 2}}', String lfString.
+	clientSocket sendData: '{"op": "handshake", "params": {"protocol_version": 3}}', String lfString.
 	response := clientSocket receiveDataTimeout: 2.
-	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 2}}', String lfString).
+	self assert: response equals: ('{"ok": true, "result": {"protocol_version": 3}}', String lfString).
 
 	"When the client then sends a list_senders_of request for a made-up selector sent only by two fixture methods in the same class and side, differing only by selector name"
 	clientSocket sendData: '{"op": "list_senders_of", "params": {"selector": "zzzFixtureTieBreakTargetSelector"}}', String lfString.
