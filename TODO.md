@@ -45,6 +45,14 @@ has been set up yet (no `initiatives/vm-source-*` folder exists for them):
   Lowcode/Sista marker, or the executable name), which would be a new wire operation and so a
   `PROTOCOL_VERSION` bump. Follow-up to the limitation noted under *Numbered (bytecode)
   primitive correlation* above; not part of `vm-source-primitive-lookup`.
+- [ ] **`vm-source-local-plugins`** — `get_vm_source` reads only the mirror of
+  `OpenSmalltalk/opensmalltalk-vm`, so a locally built or third-party plugin is unreachable:
+  e.g. `DummyPrimitiveDemo class>>hello:` (`<primitive: 'primitiveDummyHello' module: 'DummyPlugin'>`)
+  has its C source in this repo at `vm-exploration/plugins/DummyPlugin/DummyPlugin.c`, and the
+  lookup fails with `module_not_found` or `symbol_not_found`. Idea: also search configured extra
+  source roots (a local directory) for plugin `.c` files. Version-to-commit resolution would not
+  apply there, so the result needs a caveat such as "read from the working tree, not the commit
+  the VM was built from". Future initiative, not part of `vm-source-primitive-lookup`.
 - [ ] **`vm-source-platform-paths`** — the same primitive can call into OS-specific glue
   under `opensmalltalk-vm/platforms/<OS>/plugins/...`; reading the matching platform source
   (not just the shared plugin `.c` file) for cross-platform behavior questions. Future
