@@ -30,3 +30,4 @@ Logs/
 #build.zig's own cache — not versioned, rebuilt on demand
 .zig-cache/
 
+node_modules/
