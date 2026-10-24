@@ -46,6 +46,12 @@ distribution (`tools/fetch-cuis.sh` → `Cuis7-8-main/`) and the OpenSmalltalk V
 (`tools/fetch-vm.sh` → `opensmalltalk-vm/`). Idempotent — safe to re-run; pass `-f`/`--force`
 to re-fetch both from scratch. Each script also works standalone if you only need one.
 
+Separately, the bridge server can install its own shared, per-user copy of Cuis under
+`~/.cuis-mcp-bridge/cuis/<key>/` (library code only so far; no MCP tool exposes it yet). It is
+fetched on demand, pinned to a specific upstream commit, and independent of
+`tools/setup.sh` / `tools/fetch-cuis.sh` (which fetch the unpinned `main` into
+`Cuis7-8-main/`), so the two Cuis copies can differ. See `mcp-bridge/README.md`.
+
 From there:
 
 - **To build and run the MCP bridge** — see `mcp-bridge/README.md`.
@@ -68,7 +74,10 @@ and keeps a hang from blocking CI indefinitely.
   (`Cuis7-8-main/CuisVM.app`). Used by the bridge's own test suite
   (`mcp-bridge/image/run-tests.st`).
 - `npm test --prefix mcp-bridge/server` — the bridge's Node/TypeScript (Vitest) suite. No VM
-  boot, no isolation dance — plain, fast, in-process.
+  boot, no isolation dance — plain, fast, in-process. The shared-Cuis unit tests need no real
+  Cuis. An opt-in integration test downloads the real pinned archive and boots the real VM
+  (macOS only): from `mcp-bridge/server`, run
+  `CUIS_INTEGRATION=1 npx vitest run src/cuisHome/realCuis.integration.test.ts`.
 - `tools/run-vm-primitive-test.sh <script.st>` — against the **locally-built** VM
   (`opensmalltalk-vm/`), so it can see our own plugins. Used by
   `vm-exploration/image/run-check.st` to verify `DummyPlugin`/`DummyPluginZig` return their
