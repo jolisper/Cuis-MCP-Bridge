@@ -1,6 +1,7 @@
 ---
-status: complete
+status: archived
 started: 2026-10-23
+archived: 2026-10-24
 spec: /Users/jolisper/Source/Cuis-MCP-Bridge/initiatives/cuis-shared-setup/technical-spec.md
 last-completed-phase: 9
 ---
@@ -183,3 +184,13 @@ Follow-ups: once `run-smalltalk-headless` exposes the shared home as an MCP tool
 - initiatives/cuis-shared-setup/verify-static-report.md
 - mcp-bridge/server/src/cuisHome/userChanges.ts
 - initiatives/cuis-shared-setup/verify-dynamic-report.md
+
+## Retrospective
+
+All nine implementation phases ran to completion (five scaffolding, four TDD; 43 TDD cycles), and two verification passes followed. The final state is 325 passing tests (1 opt-in skip), 29 of 32 invariants covered statically and 31 of 32 verified dynamically against the real pinned Cuis VM. Nothing is left failing.
+
+Deviations from the spec: processLock.ts is not a verbatim port of mirror.ts, because a concurrency test found a two-winner race in its rename-aside takeover. It now serializes takeover through an exclusive .takeover marker. mirror.ts probably has the same race and was left untouched. cuisHomeStatus reports "preparing" while a layout directory coexists with a live lock. No SIGTERM or exit handlers kill an in-flight smoke-boot VM.
+
+Lessons: the fake VM hid four real-VM defects that only the real VM exposed. The completion-marker regex was anchored but the VM prefixes Transcript lines with a timestamp. The smoke script lacked Transcript logToStdout: true, so a headless Cuis printed nothing. The VM's cwd (dist/) was polluted with UserChanges files. A relative script path was resolved against the wrong directory. A fifth defect appeared in failure-path testing: pausing the fetch body on disk backpressure crashed the process with an uncaught undici assertion against an HTTP/1.0 close-after-body server. Each was fixed test first. A fake that mimics the real tool's output format and side effects, plus an opt-in real-VM test run early, would have found them sooner.
+
+Open follow-ups: make mirror.ts use processLock.ts, fold run-cuis-shared-setup into run-cuis-mcp-bridge once run-smalltalk-headless ships and the repo's own Cuis setup is retired, make cuis_base_build_failed explain an empty VM output, prepend logToStdout in run-smalltalk-headless, and invariant 17 (offline) remains unverified.
