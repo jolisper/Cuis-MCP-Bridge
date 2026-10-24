@@ -17,7 +17,7 @@ if (!op) {
 }
 
 const params = paramsJson ? JSON.parse(paramsJson) : {};
-const PROTOCOL_VERSION = 2;
+const PROTOCOL_VERSION = 3;
 
 const socket = net.createConnection({ host, port: Number(port) }, () => {
   socket.write(JSON.stringify({ op: 'handshake', params: { protocol_version: PROTOCOL_VERSION } }) + '\n');
