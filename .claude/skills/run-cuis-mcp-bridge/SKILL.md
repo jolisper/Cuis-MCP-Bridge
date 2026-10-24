@@ -117,7 +117,7 @@ suite is `/spec-verify-static`'s job): `tools/run-headless-tests.sh mcp-bridge/i
   you're using) referenced a package-defined class by its bare name instead of
   `Smalltalk at: #ClassName`.
 - **`Handshake failed: {"code":"protocol_mismatch", ...}`**: the driver's hardcoded
-  `PROTOCOL_VERSION` (currently `2`, at the top of `driver.mjs`) has drifted from
+  `PROTOCOL_VERSION` (currently `3`, at the top of `driver.mjs`) has drifted from
   `McpBridgeConnection class>>protocolVersion` in `mcp-bridge/image/MCP-Bridge.pck.st`. This
   is a real bug if it happens, not a driver quirk — it means the two sides' documented
   protocol version and the actual server constant are out of sync (this exact drift was

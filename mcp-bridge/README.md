@@ -188,6 +188,54 @@ Typical `get_vm_source` call order: `get_method_source` (read the pragma) → `g
 | `SqueakFFIPrims` | required | required |
 | omitted | required | optional (without it, the plain `cointerp.c` rendering is returned) |
 
+## Shared Cuis home
+
+The server also contains a shared, per-user Cuis installation capability (library code only; no
+MCP tool exposes it yet). It lives under `~/.cuis-mcp-bridge/cuis/<key>/`, where `<key>` is the
+Cuis release plus the short pinned commit of Cuis-Smalltalk/Cuis7-8 (currently `7.8-d4f9cc1`):
+
+- `dist/` — the verified distribution, including the macOS VM.
+- `base/` — the frozen base image, sources and changes.
+- Siblings: `<key>.lock`, `<key>.error` (last failure, reported until the next prepare) and
+  `<key>.tmp-<pid>/` (in progress).
+
+Different Cuis versions get different directories; old ones are never touched. Deleting
+`~/.cuis-mcp-bridge/cuis/<key>` returns that version to not-installed.
+
+It is fetched on demand (never at server start), pinned to a specific commit rather than a moving
+branch, verified by the SHA-256 of the downloaded archive before extraction, then smoke-booted
+headlessly. It needs `/usr/bin/unzip` and is macOS only. Once ready, running needs no network.
+
+Runs execute on a throwaway scratch copy of `base/`, so the frozen base is never modified, under
+a time limit that kills the VM's whole process group. Output is stdout and stderr merged.
+Outcomes are passed, failed, timeout-or-crash and setup-error (exit codes `0`/`1`/`124`/`2`; the
+completion marker line is `DONE exitCode=N`).
+
+A headless Cuis keeps Transcript output in memory unless the script runs `Transcript logToStdout: true.`
+first, so a script that doesn't is silent and the run is classed timeout-or-crash. Callers must start
+their scripts with it and end with `Transcript show: 'DONE exitCode=N'; newLine.` then
+`Smalltalk quitPrimitive: N` (the marker may appear after the VM's timestamp prefix). Inside a script,
+`DirectoryEntry currentDirectory` is the distribution directory (`dist/`), where `/ 'Packages'`
+addresses a directory and `// 'README.md'` a file.
+
+Runs execute with the VM's cwd set to the distribution's `dist/`, where the VM writes `UserChanges/`
+files; the shared home removes them after each run (and after the smoke boot) so `dist/` stays
+pristine. Overlapping runs could in theory remove each other's change log.
+
+It is independent of the repo's own `tools/setup.sh`, `tools/fetch-cuis.sh`, `.headless-base`
+and test scripts. Its error kinds:
+
+- `unsupported_platform` — not macOS.
+- `cuis_missing` — not installed yet; prepare it first.
+- `cuis_initializing` — a prepare is still in progress; retry once it finishes.
+- `cuis_fetch_failed` — the archive couldn't be downloaded; retry when online.
+- `cuis_checksum_mismatch` — the downloaded archive doesn't match the pinned SHA-256.
+- `cuis_write_failed` — a write under `~/.cuis-mcp-bridge` failed, e.g. a full disk.
+- `cuis_base_build_failed` — the smoke boot or base image build failed.
+- `cuis_corrupt` — the installation is unreadable or incomplete. Delete
+  `~/.cuis-mcp-bridge/cuis/<key>` and prepare again.
+- `internal_error` — an unexpected failure.
+
 ## Troubleshooting
 
 Cuis-side tool calls can fail with one of six structured error codes:
