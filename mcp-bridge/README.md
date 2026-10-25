@@ -112,7 +112,7 @@ the file.
    Claude Code session. `cuis-mcp-bridge` should show as connected. If it shows as failed,
    double-check the path in the config is absolute and that `npm run build` actually produced
    `dist/index.js` (step 1).
-3. The 15 tools listed below (`list_categories`, `list_classes`, etc.) should now be available
+3. The 16 tools listed below (`list_categories`, `list_classes`, etc.) should now be available
    to Claude Code for use in conversation.
 
 Check Claude Code's own MCP documentation if this registration format has changed since
@@ -170,6 +170,8 @@ whole bridge failing to start.
   call whose commit isn't in the mirror yet fetches it first and can take noticeably longer.
   When the plugin's stamp in `moduleStamps` differs from the one at that commit, the tool looks
   for the commit carrying the running stamp.
+- `run_smalltalk` — Host-side, no Cuis image needed. Run Smalltalk code (mostly SUnit tests) in a
+  transient headless Cuis and get a structured outcome. See "`run_smalltalk`" below.
 
 `setup_vm_mirror` requires `git` on PATH (`git_unavailable` otherwise). Its only writes are
 under `~/.cuis-mcp-bridge/` (`vm-mirror/`, `vm-mirror.lock`, `vm-mirror.error`, and a transient
@@ -188,10 +190,80 @@ Typical `get_vm_source` call order: `get_method_source` (read the pragma) → `g
 | `SqueakFFIPrims` | required | required |
 | omitted | required | optional (without it, the plain `cointerp.c` rendering is returned) |
 
+## `run_smalltalk`
+
+Runs Smalltalk code, mostly SUnit tests, in a throwaway headless Cuis built from the pinned
+shared Cuis (see "Shared Cuis home") and returns a structured outcome. Host-side: it never
+touches the live image through the wire channel and works without one. Every call gets a fresh
+instance, so nothing the code does is visible to later runs. macOS only.
+
+The code is evaluated as a script and the value of its last expression is the result, e.g.
+`MyTest suite run`.
+
+**Parameters**
+
+- `code` (required) — the Smalltalk code to run.
+- `packages` — `.pck.st` paths to load first, in order (relative paths resolve against the
+  session's working directory). Dependencies are not loaded implicitly: list them before the
+  packages that need them, e.g. `JSON` and `Network-Kernel` under the shared Cuis
+  `dist/Packages`.
+- `timeoutSeconds` — integer, default 60, maximum 300; out-of-range values are rejected, not
+  clamped.
+
+**Outcome** (JSON text)
+
+```json
+{ "status": "passed", "exitCode": 0, "output": "...", "outputBytes": 1234, "truncated": false,
+  "result": "a TestResult", "resultTruncated": false,
+  "tests": { "run": 3, "passed": 3, "failures": 0, "errors": 0, "failing": [], "erroring": [] } }
+```
+
+- `status` — `passed`, `failed`, `timeout` or `setup_error` (nothing was executed).
+- `exitCode`, `output` — the Transcript output of the run. `output` is capped at 64 KB (the first
+  16 KB and the last 48 KB are kept, with a cut marker); `outputBytes` is the full size and
+  `truncated` says whether it was cut. Status and `tests` come from the full output.
+- `result` — text form of the last value, capped at 4 KB (`resultTruncated`). Absent on
+  `timeout` and `setup_error`.
+- `tests` — only when the result is a `TestResult`: counts and the ids of failing and erroring
+  tests.
+- `error` — on every non-`passed` outcome, as `<code>: <message>`. A `setup_error` is also
+  flagged as an MCP error.
+
+**Error codes**
+
+- Input (`setup_error`): `invalid_code`, `invalid_packages`, `package_not_found`,
+  `package_not_pck`, `invalid_timeout`. All are rejected before any Cuis is started.
+- Shared Cuis (`setup_error`): `unsupported_platform`, `cuis_missing`, `cuis_initializing`,
+  `cuis_corrupt`, `cuis_fetch_failed`, `cuis_checksum_mismatch`, `cuis_write_failed`,
+  `cuis_base_build_failed` (see "Shared Cuis home").
+- Run (`failed`): `evaluation_error` (the code raised an unhandled error or did not compile),
+  `package_load_error` (a package failed to load), `harness_error` (the harness could not
+  report the result or tests), `tests_failed` (the result is a `TestResult` with failures or
+  errors).
+- `timeout` — the run did not finish in time or ended without reporting.
+
+**First use.** The first call with no shared Cuis installed starts the download in the
+background and returns `cuis_missing` without running anything (a call during the download gets
+`cuis_initializing`); retry shortly. Once ready, runs need no network. A failed preparation is
+reported with its own code and the next call starts a fresh attempt.
+
+**Not sandboxed.** The code can write files, use the network, start processes or quit the VM, so
+review it for host side effects before running, ask the user and wait for explicit confirmation. Relative file writes land in
+the shared Cuis distribution directory (`dist/`), not in the project directory.
+
+**Gotchas on the real VM**
+
+- A class defined and used within the same evaluated code fails with `UndeclaredVariableWarning`;
+  define it in one call, or reach it with `Smalltalk at: #Name`.
+- `Object subclass: #Foo` needs the full
+  `subclass:instanceVariableNames:classVariableNames:poolDictionaries:category:` form.
+- A script that fails to parse as a whole ends promptly as `failed` (`evaluation_error: SyntaxErrorNotification`) and none of its code runs, so earlier Transcript output does not appear.
+- Code that calls `Smalltalk quit` skips the harness markers and is reported as `timeout`.
+
 ## Shared Cuis home
 
-The server also contains a shared, per-user Cuis installation capability (library code only; no
-MCP tool exposes it yet). It lives under `~/.cuis-mcp-bridge/cuis/<key>/`, where `<key>` is the
+The server also contains a shared, per-user Cuis installation capability, used by the
+`run_smalltalk` tool (see above). It lives under `~/.cuis-mcp-bridge/cuis/<key>/`, where `<key>` is the
 Cuis release plus the short pinned commit of Cuis-Smalltalk/Cuis7-8 (currently `7.8-d4f9cc1`):
 
 - `dist/` — the verified distribution, including the macOS VM.
@@ -223,7 +295,7 @@ files; the shared home removes them after each run (and after the smoke boot) so
 pristine. Overlapping runs could in theory remove each other's change log.
 
 It is independent of the repo's own `tools/setup.sh`, `tools/fetch-cuis.sh`, `.headless-base`
-and test scripts. Its error kinds:
+and test scripts. Its error kinds, reported by `run_smalltalk` as `setup_error` codes:
 
 - `unsupported_platform` — not macOS.
 - `cuis_missing` — not installed yet; prepare it first.
@@ -291,3 +363,8 @@ their own codes instead, reported as `"<code>: <message>"`:
 - `path_not_found` — the commit lacks the expected file, e.g. an older repository layout.
 - `primitive_slot_empty` — the numbered slot holds no function; the method always runs its
   Smalltalk fallback.
+
+`run_smalltalk` is also host-side. It reports its failures as `<code>: <message>` in a
+`setup_error` outcome; the codes, including the shared-Cuis ones (`cuis_missing`,
+`cuis_initializing`, `cuis_corrupt`, ...), are listed under "`run_smalltalk`" and "Shared Cuis
+home". For `cuis_corrupt`, delete the directory named in the message and call again.

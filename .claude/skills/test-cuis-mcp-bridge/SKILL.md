@@ -63,6 +63,13 @@ few minutes the first time (or after `opensmalltalk-vm/` is re-cloned); pass a g
 timeout (300s+) rather than the default 60s used by the other suites. Once built, subsequent
 runs are fast (VM build is skipped, plugin rebuild is near-instant via `zig build`'s cache).
 
+## Quick checks without a script
+
+For a quick Smalltalk/SUnit check, assistants can call the `run_smalltalk` MCP tool instead of
+hand-writing a script for the runners above (it runs in a transient headless Cuis from the
+shared Cuis, macOS only; see `mcp-bridge/README.md`). The headless runner in this skill stays
+the reference for the bridge's own tests.
+
 ## Why this skill exists
 
 `test-run-all` (and similar generic test runners) detect project type from a fixed table of

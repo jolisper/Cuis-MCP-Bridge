@@ -12,9 +12,12 @@ wire schema changes, this file is updated first, and both `PROTOCOL_VERSION` con
 bumped together by convention (there is no shared types file across Smalltalk and
 TypeScript, and no tooling enforces the bump — see "Protocol version" below).
 
-This bridge exposes **read-only reflection only**. No operation defined here can define,
-compile, delete, or otherwise modify anything in the image, and no operation evaluates
-arbitrary code (functional-spec invariants 17, 18).
+The live-image wire channel defined here exposes **read-only reflection only**. No operation
+defined here can define, compile, delete, or otherwise modify anything in the image, and no
+operation evaluates arbitrary code (functional-spec invariants 17, 18). This applies to the
+wire channel only: the bridge process also has host-side tools that never use it, including
+`run_smalltalk`, which evaluates code only in transient headless Cuis instances and never in
+or from the live image.
 
 ## Transport
 
