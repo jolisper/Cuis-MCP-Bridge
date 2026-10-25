@@ -7,6 +7,7 @@ import {
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import { CuisClient } from './cuisClient.js';
+import { combineSignals, createShutdownSignal } from './shutdownSignal.js';
 import { createTools } from './tools.js';
 
 // Lazy connection: `CuisClient.sendRequest()` auto-connects on first use, so we
@@ -14,6 +15,7 @@ import { createTools } from './tools.js';
 // start before the Cuis image is necessarily running.
 const client = new CuisClient({ host: '127.0.0.1', port: 6789 });
 const tools = createTools(client);
+const shutdownSignal = createShutdownSignal(process, process.stdin);
 
 const server = new Server(
   { name: 'cuis-mcp-bridge', version: '0.1.0' },
@@ -28,7 +30,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   })),
 }));
 
-server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
+server.setRequestHandler(CallToolRequestSchema, async (request, extra): Promise<CallToolResult> => {
   const tool = tools.find((t) => t.name === request.params.name);
   if (!tool) {
     return {
@@ -36,7 +38,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToo
       isError: true,
     };
   }
-  return (await tool.handler(request.params.arguments ?? {})) as CallToolResult;
+  return (await tool.handler(request.params.arguments ?? {}, {
+    signal: combineSignals(extra.signal, shutdownSignal),
+  })) as CallToolResult;
 });
 
 const transport = new StdioServerTransport();

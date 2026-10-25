@@ -1,5 +1,6 @@
 import type { CuisClient } from './cuisClient.js';
 import type { VmSourceOptions } from './vmSource/resolveCommit.js';
+import { createRunSmalltalkTool, type RunSmalltalkOptions } from './runSmalltalk/tool.js';
 import { createVmSourceTools } from './vmSource/tools.js';
 
 /** MCP `CallToolResult`-shaped outcome of invoking a tool's handler. */
@@ -13,7 +14,10 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => Promise<ToolCallResult>;
+  handler: (
+    args: Record<string, unknown>,
+    extra?: { signal?: AbortSignal },
+  ) => Promise<ToolCallResult>;
 }
 
 interface ToolMeta {
@@ -146,12 +150,14 @@ function hasErrorCode(err: unknown): err is Error & { code: string } {
  * Builds the MCP tool definitions: the 13 Cuis-forwarded tools, each wired to
  * `client` via a shared handler that forwards `args` as `sendRequest` params and
  * maps any rejection to an MCP error result instead of throwing, followed by the
- * host-side VM-source tools. `vmSource` overrides the VM-source options (tests use a
- * temp home).
+ * host-side VM-source tools and the host-side `run_smalltalk` tool. `vmSource` overrides
+ * the VM-source options (tests use a temp home); `runSmalltalk` overrides the run_smalltalk
+ * options (Cuis home, injectable dependencies).
  */
 export function createTools(
   client: CuisClient,
   vmSource: Partial<VmSourceOptions> = {},
+  runSmalltalk: Partial<RunSmalltalkOptions> = {},
 ): ToolDefinition[] {
   const forwarded = TOOL_METADATA.map((meta) => ({
     ...meta,
@@ -171,5 +177,5 @@ export function createTools(
       }
     },
   }));
-  return [...forwarded, ...createVmSourceTools(vmSource)];
+  return [...forwarded, ...createVmSourceTools(vmSource), createRunSmalltalkTool(runSmalltalk)];
 }
