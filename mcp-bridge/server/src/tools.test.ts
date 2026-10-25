@@ -1,3 +1,6 @@
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createTools } from './tools.js';
 import type { CuisClient } from './cuisClient.js';
@@ -241,7 +244,7 @@ describe('createTools', () => {
       const setupTool = tools.find((tool) => tool.name === 'setup_vm_mirror');
       const result = await setupTool?.handler({});
 
-      // Then the tool list ends with setup_vm_mirror then get_vm_source, it reports started, and the Cuis connection was never used
+      // Then the tool list ends with setup_vm_mirror, get_vm_source, then run_smalltalk, it reports started, and the Cuis connection was never used
       expect(names).toEqual([
         'list_categories',
         'list_classes',
@@ -258,6 +261,7 @@ describe('createTools', () => {
         'get_loaded_modules',
         'setup_vm_mirror',
         'get_vm_source',
+        'run_smalltalk',
       ]);
       expect(result).toEqual({ content: [{ type: 'text', text: '{"status":"started"}' }] });
       expect(calls).toEqual([]);
@@ -312,6 +316,97 @@ describe('createTools', () => {
       expect(fakeClient.sendRequest).not.toHaveBeenCalled();
       expect(text).not.toContain('session_busy');
       expect(text).not.toContain('unreachable');
+    });
+  });
+
+  describe('run_smalltalk independence from the live image and startup', () => {
+    const temps: string[] = [];
+    const tempHome = () => {
+      const dir = mkdtempSync(join(tmpdir(), 'tools-inv-'));
+      temps.push(dir);
+      return dir;
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.resetModules();
+      for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('run_smalltalk gives the same passed result with an unusable or a working live-image client, never touching the client (invariant 20)', async () => {
+      // Given a client whose every method throws, and a working client, each with a ready run_smalltalk
+      const home = tempHome();
+      const touched = vi.fn(() => {
+        throw new Error('live image must not be used');
+      });
+      const brokenClient = { connect: touched, sendRequest: touched } as unknown as CuisClient;
+      const workingSend = vi.fn(async () => 'x');
+      const workingClient = { connect: vi.fn(), sendRequest: workingSend } as unknown as CuisClient;
+      const runSmalltalk = {
+        status: vi.fn().mockResolvedValue({ state: 'ready' }),
+        run: vi.fn(async () => ({ outcome: 'passed', exitCode: 0, output: 'DONE exitCode=0' })),
+        platform: 'darwin' as const,
+        home,
+      };
+      const call = async (client: CuisClient) => {
+        const tool = createTools(client, {}, runSmalltalk as never).find((t) => t.name === 'run_smalltalk');
+        const result = await tool!.handler({ code: '1' });
+        return { result, body: JSON.parse(result.content[0].text) };
+      };
+
+      // When calling run_smalltalk through each
+      const broken = await call(brokenClient);
+      const working = await call(workingClient);
+
+      // Then both are the same passed outcome, and neither client was ever used
+      expect(broken.result.isError).toBeFalsy();
+      expect(broken.body.status).toBe('passed');
+      expect(working.body.status).toBe(broken.body.status);
+      expect(touched).not.toHaveBeenCalled();
+      expect(workingSend).not.toHaveBeenCalled();
+      expect((workingClient as unknown as { connect: ReturnType<typeof vi.fn> }).connect).not.toHaveBeenCalled();
+    });
+
+    it('building the tool list and importing the run_smalltalk and cuisHome modules do no network access, Cuis work or filesystem writes (invariant 29)', async () => {
+      // Given a throwing fetch spy, spy status/prepare/run, a client with spy methods and an empty temp home
+      const home = tempHome();
+      const fetchSpy = vi.fn(() => {
+        throw new Error('no network at startup');
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+      const status = vi.fn();
+      const prepare = vi.fn();
+      const run = vi.fn();
+      const client = { connect: vi.fn(), sendRequest: vi.fn() };
+      const cwdBefore = process.cwd();
+
+      // When constructing the tool list
+      const tools = createTools(client as unknown as CuisClient, {}, { status, prepare, run, home } as never);
+
+      // Then no dependency, fetch or client method was used and the home is still empty
+      expect(tools.map((t) => t.name)).toContain('run_smalltalk');
+      expect(status).not.toHaveBeenCalled();
+      expect(prepare).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(client.connect).not.toHaveBeenCalled();
+      expect(client.sendRequest).not.toHaveBeenCalled();
+      expect(readdirSync(home)).toEqual([]);
+
+      // When freshly importing the run_smalltalk and cuisHome modules
+      vi.resetModules();
+      await import('./runSmalltalk/tool.js');
+      await import('./cuisHome/cuisHome.js');
+      await import('./cuisHome/run.js');
+      await import('./cuisHome/pin.js');
+      await import('./cuisHome/runner.js');
+      await import('./cuisHome/processLock.js');
+
+      // Then still no network access, cwd change or files
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(process.cwd()).toBe(cwdBefore);
+      expect(readdirSync(home)).toEqual([]);
+      vi.unstubAllGlobals();
     });
   });
 });
